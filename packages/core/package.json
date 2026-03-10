@@ -1,0 +1,35 @@
+{
+  "name": "@frogger/core",
+  "version": "0.1.8",
+  "type": "module",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts",
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "lint": "tsc --noEmit",
+    "dev": "tsup src/index.ts --format esm --dts --watch"
+  },
+  "dependencies": {
+    "@ai-sdk/anthropic": "^3.0.58",
+    "@ai-sdk/openai": "^3.0.41",
+    "@ai-sdk/provider": "^3.0.8",
+    "@frogger/shared": "workspace:*",
+    "ai": "^6.0.116",
+    "diff-match-patch": "^1.0.5",
+    "execa": "^9.6.1",
+    "globby": "^16.1.1",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/diff-match-patch": "^1.0.36",
+    "@types/node": "^25.3.5"
+  }
+}

@@ -1,0 +1,67 @@
+// Agent
+export { runAgent, type RunAgentOptions } from './agent/agent.js';
+export { AgentContext } from './agent/context.js';
+export { SessionManager, type SessionData } from './agent/session.js';
+export { resolveFileReferences, isImageFile, type FileReferenceResult, type ImageReference } from './agent/file-reference.js';
+export { CheckpointManager, type Checkpoint, type RestoreResult } from './agent/checkpoint.js';
+export { createAgentTools, type CreateAgentToolsOptions, type AgentToolsResult } from './agent/agent-tools.js';
+export { generateRepoMap, type RepoMapOptions } from './agent/repo-map.js';
+
+// Context Management
+export { estimateTokens, estimateMessagesTokens } from './agent/token-estimator.js';
+export { ContextBudgetTracker, type ContextBudget } from './agent/context-budget.js';
+export { compactMessages, type CompactResult } from './agent/compact.js';
+
+// Commands
+export { CommandRegistry } from './commands/registry.js';
+export { clearCommand } from './commands/clear.js';
+export { compactCommand } from './commands/compact.js';
+export { compactThresholdCommand } from './commands/compact-threshold.js';
+export { modelCommand } from './commands/model.js';
+export { setupCommand } from './commands/setup.js';
+export { undoCommand } from './commands/undo.js';
+export { sessionsCommand } from './commands/sessions.js';
+export { resumeCommand } from './commands/resume.js';
+export { gitAuthCommand } from './commands/git-auth.js';
+export { costCommand } from './commands/cost.js';
+export { contextCommand } from './commands/context.js';
+export { doctorCommand } from './commands/doctor.js';
+export { createRewindCommand } from './commands/rewind.js';
+export { loadCustomCommands } from './commands/custom-loader.js';
+export type { SlashCommand, SlashCommandContext, SlashCommandResult, BaseCommandContext, BudgetContext, ProviderContext, UsageContext } from './commands/types.js';
+
+// Modes
+export { ModeManager } from './modes/manager.js';
+export { askMode } from './modes/ask.js';
+export { planMode } from './modes/plan.js';
+export { agentMode } from './modes/agent.js';
+
+// LLM
+export { createProvider, createModel } from './llm/provider.js';
+export { buildSystemPrompt } from './llm/system-prompt.js';
+
+// Tools & Permissions
+export { ToolRegistry, createToolRegistry, type PermissionRequestCallback } from './tools/index.js';
+export { PermissionManager } from './permission/permission.js';
+export type { PermissionCallback } from './permission/permission.js';
+export {
+  resolvePermission, buildPermissionRule, savePermissionRule, loadPermissionRules,
+  matchesRule, getProjectPermissionsPath, getGlobalPermissionsPath,
+  type PermissionRulesFile,
+} from './permission/rules.js';
+export { isPermissionsConfirmed, confirmPermissions } from './permission/confirmed-permissions.js';
+
+// Config
+export {
+  loadConfig, saveConfig, hasConfig, loadProjectContext,
+  loadProviders, saveProviders, addProvider, removeProvider, findProvider, findModelInfo,
+} from './config/config.js';
+export type { FroggerConfig } from './config/config.js';
+
+// Logger
+export { logger, setLogLevel, getLogLevel, type LogLevel } from './utils/logger.js';
+
+// Benchmark
+export { BenchmarkRunner } from './benchmark/runner.js';
+export { getAllTasks, getTask } from './benchmark/tasks/index.js';
+export type { BenchmarkTask, BenchmarkResult, BenchmarkValidation } from './benchmark/types.js';
