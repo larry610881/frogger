@@ -77,8 +77,8 @@ describe('runPipeMode', () => {
 
     await runPipeMode(baseOptions);
 
-    const lines = stdoutSpy.mock.calls.map(call => JSON.parse(call[0] as string));
-    const textLines = lines.filter(l => l.type === 'text_delta');
+    const lines = stdoutSpy.mock.calls.map((call: unknown[]) => JSON.parse(call[0] as string));
+    const textLines = lines.filter((l: Record<string, unknown>) => l.type === 'text_delta');
     expect(textLines).toHaveLength(2);
     expect(textLines[0]).toEqual({ type: 'text_delta', text: 'Hello' });
     expect(textLines[1]).toEqual({ type: 'text_delta', text: ' world' });
@@ -104,15 +104,15 @@ describe('runPipeMode', () => {
 
     await runPipeMode(baseOptions);
 
-    const lines = stdoutSpy.mock.calls.map(call => JSON.parse(call[0] as string));
-    const toolCall = lines.find(l => l.type === 'tool_call');
+    const lines = stdoutSpy.mock.calls.map((call: unknown[]) => JSON.parse(call[0] as string));
+    const toolCall = lines.find((l: Record<string, unknown>) => l.type === 'tool_call');
     expect(toolCall).toEqual({
       type: 'tool_call',
       toolName: 'read-file',
       args: { path: '/tmp/test/foo.ts' },
     });
 
-    const toolResult = lines.find(l => l.type === 'tool_result');
+    const toolResult = lines.find((l: Record<string, unknown>) => l.type === 'tool_result');
     expect(toolResult).toEqual({
       type: 'tool_result',
       toolName: 'read-file',
@@ -141,8 +141,8 @@ describe('runPipeMode', () => {
 
     await runPipeMode(baseOptions);
 
-    const lines = stdoutSpy.mock.calls.map(call => JSON.parse(call[0] as string));
-    const doneLine = lines.find(l => l.type === 'done');
+    const lines = stdoutSpy.mock.calls.map((call: unknown[]) => JSON.parse(call[0] as string));
+    const doneLine = lines.find((l: Record<string, unknown>) => l.type === 'done');
     expect(doneLine).toEqual({
       type: 'done',
       usage: { promptTokens: 42, completionTokens: 17 },
@@ -177,8 +177,8 @@ describe('runPipeMode', () => {
 
     await runPipeMode(baseOptions);
 
-    const lines = stdoutSpy.mock.calls.map(call => JSON.parse(call[0] as string));
-    const usageLines = lines.filter(l => l.type === 'usage_update');
+    const lines = stdoutSpy.mock.calls.map((call: unknown[]) => JSON.parse(call[0] as string));
+    const usageLines = lines.filter((l: Record<string, unknown>) => l.type === 'usage_update');
     expect(usageLines).toHaveLength(0);
   });
 });

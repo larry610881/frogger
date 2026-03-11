@@ -1,6 +1,6 @@
 {
   "name": "@frogger/cli",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "type": "module",
   "bin": {
     "frogger": "./bin/frogger.js"
@@ -23,6 +23,7 @@
   "dependencies": {
     "@frogger/core": "workspace:*",
     "@frogger/shared": "workspace:*",
+    "ai": "^6.0.116",
     "commander": "^14.0.3",
     "ink": "^6.8.0",
     "react": "^19.2.4"

@@ -99,8 +99,9 @@ describe('useAgent abort — pending permission cleanup', () => {
     let pendingPermissionRef: PendingPermissionRef | null = null;
 
     // The fix should not throw when there's nothing to clean up
-    if (pendingPermissionRef) {
-      pendingPermissionRef.resolve('deny');
+    const ref = pendingPermissionRef as PendingPermissionRef | null;
+    if (ref) {
+      ref.resolve('deny');
     }
     pendingPermissionRef = null;
 
@@ -132,8 +133,9 @@ describe('useAgent abort — pending permission cleanup', () => {
     const permissionPromise = permissionCallback('write-file', { path: '/test' });
 
     // Simulate abort → finally block uses the ref to resolve
-    if (pendingPermissionResolveRef) {
-      pendingPermissionResolveRef('deny');
+    const resolveRef = pendingPermissionResolveRef as ((response: PermissionResponse) => void) | null;
+    if (resolveRef) {
+      resolveRef('deny');
       pendingPermissionResolveRef = null;
     }
 

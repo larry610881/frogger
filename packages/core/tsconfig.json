@@ -6,7 +6,5 @@
     "jsx": "react-jsx"
   },
   "include": ["src"],
-  "references": [
-    { "path": "../shared" }
-  ]
+  "exclude": ["src/**/*.test.ts", "src/**/__tests__/**"]
 }
