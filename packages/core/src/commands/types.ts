@@ -1,10 +1,16 @@
 import type { ModelMessage, LanguageModel } from 'ai';
 import type { ModelInfo, ProviderEntry } from '@frogger/shared';
 import type { ContextBudgetTracker } from '../agent/context-budget.js';
+import type { MCPClientManager } from '../mcp/client.js';
+import type { BackgroundTaskManager, BackgroundTaskRunner } from '../agent/background-task.js';
 
 export interface BaseCommandContext {
   messagesRef: { current: ModelMessage[] };
   onClearHistory?: () => void;
+  mcpClientManager?: MCPClientManager;
+  backgroundTaskManager?: BackgroundTaskManager;
+  createBackgroundAgent?: (prompt: string) => BackgroundTaskRunner;
+  onBackgroundTaskComplete?: (taskId: string) => void;
 }
 
 export interface BudgetContext {
@@ -27,6 +33,9 @@ export interface UsageContext {
     completionTokens: number;
     totalTokens: number;
     estimatedCost: number | null;
+    reasoningTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
   };
 }
 

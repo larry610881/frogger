@@ -30,10 +30,22 @@ const providerEntrySchema = z.object({
 
 const providersSchema = z.array(providerEntrySchema);
 
+export interface ThinkingConfig {
+  enabled: boolean;
+  budgetTokens: number;
+}
+
+export interface NotificationsConfig {
+  enabled: boolean;
+  minDurationMs?: number;
+}
+
 export interface FroggerConfig {
   provider: string;
   model: string;
   apiKey?: string;
+  thinking?: ThinkingConfig;
+  notifications?: NotificationsConfig;
 }
 
 /** Shape of ~/.frogger/config.json */
@@ -41,6 +53,14 @@ interface ConfigFile {
   provider?: string;
   model?: string;
   apiKey?: string;
+  thinking?: {
+    enabled?: boolean;
+    budgetTokens?: number;
+  };
+  notifications?: {
+    enabled?: boolean;
+    minDurationMs?: number;
+  };
 }
 
 function getConfigDir(): string {
@@ -80,13 +100,6 @@ function migrateModels(models: (string | ModelInfo)[]): ModelInfo[] {
   });
 }
 
-/** Migrate provider entries from old format if needed */
-function migrateProvider(provider: ProviderEntry): ProviderEntry {
-  if (provider.models.length > 0 && typeof provider.models[0] === 'string') {
-    return { ...provider, models: migrateModels(provider.models as unknown as (string | ModelInfo)[]) };
-  }
-  return provider;
-}
 
 /** Load providers from ~/.frogger/providers.json. Creates default file if missing. */
 export function loadProviders(): ProviderEntry[] {
@@ -100,12 +113,28 @@ export function loadProviders(): ProviderEntry[] {
   try {
     const raw = readFileSync(providersPath, 'utf-8');
     const parsed = JSON.parse(raw);
+
+    // Migrate old string[] models format before validation
+    if (Array.isArray(parsed)) {
+      for (const entry of parsed) {
+        if (entry && Array.isArray(entry.models)) {
+          entry.models = migrateModels(entry.models);
+        }
+      }
+    }
+
     const result = providersSchema.safeParse(parsed);
     if (!result.success) {
       logger.warn(`Invalid providers.json: ${result.error.message}. Using defaults.`);
       return [...DEFAULT_PROVIDERS];
     }
-    return (result.data as ProviderEntry[]).map(migrateProvider);
+
+    // Persist migrated data so warning doesn't repeat
+    try {
+      writeFileSync(providersPath, JSON.stringify(parsed, null, 2) + '\n', 'utf-8');
+    } catch { /* non-critical */ }
+
+    return result.data as ProviderEntry[];
   } catch {
     return [...DEFAULT_PROVIDERS];
   }
@@ -166,6 +195,8 @@ export function findModelInfo(providerName: string, modelName: string): ModelInf
 export function loadConfig(options?: {
   provider?: string;
   model?: string;
+  thinking?: boolean;
+  notify?: boolean;
 }): FroggerConfig {
   const fileConfig = readConfigFile();
 
@@ -198,8 +229,38 @@ export function loadConfig(options?: {
     apiKey = fileConfig.apiKey;
   }
 
-  logger.debug(`Config loaded — provider=${providerName}, model=${model}, apiKey=${apiKey ? 'set' : 'unset'}`);
-  return { provider: providerName, model, apiKey };
+  // Thinking config: CLI flag > config file > disabled
+  const DEFAULT_THINKING_BUDGET = 10_000;
+  let thinking: ThinkingConfig | undefined;
+  if (options?.thinking === true) {
+    thinking = {
+      enabled: true,
+      budgetTokens: fileConfig.thinking?.budgetTokens ?? DEFAULT_THINKING_BUDGET,
+    };
+  } else if (options?.thinking === false) {
+    thinking = undefined;
+  } else if (fileConfig.thinking?.enabled) {
+    thinking = {
+      enabled: true,
+      budgetTokens: fileConfig.thinking.budgetTokens ?? DEFAULT_THINKING_BUDGET,
+    };
+  }
+
+  // Notifications config: CLI flag > config file > default enabled
+  let notifications: NotificationsConfig | undefined;
+  if (options?.notify === true) {
+    notifications = { enabled: true, minDurationMs: fileConfig.notifications?.minDurationMs };
+  } else if (options?.notify === false) {
+    notifications = undefined;
+  } else if (fileConfig.notifications?.enabled === false) {
+    notifications = undefined;
+  } else {
+    // Default: enabled
+    notifications = { enabled: true, minDurationMs: fileConfig.notifications?.minDurationMs };
+  }
+
+  logger.debug(`Config loaded — provider=${providerName}, model=${model}, apiKey=${apiKey ? 'set' : 'unset'}, thinking=${thinking?.enabled ?? false}`);
+  return { provider: providerName, model, apiKey, thinking, notifications };
 }
 
 export async function saveConfig(config: ConfigFile): Promise<string> {

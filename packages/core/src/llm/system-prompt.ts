@@ -6,8 +6,10 @@ export function buildSystemPrompt(options: {
   workingDirectory: string;
   projectContext?: string;
   repoMap?: string;
+  rules?: string;
+  memory?: string;
 }): string {
-  const { modeConfig, workingDirectory, projectContext, repoMap } = options;
+  const { modeConfig, workingDirectory, projectContext, repoMap, rules, memory } = options;
 
   const parts: string[] = [
     `You are ${APP_NAME}, an AI coding assistant. You help developers understand, modify, and create code.`,
@@ -23,6 +25,14 @@ export function buildSystemPrompt(options: {
 
   if (repoMap) {
     parts.push('', '## Repository Structure', '', '```', repoMap, '```');
+  }
+
+  if (rules) {
+    parts.push('', '## Rules', '', rules);
+  }
+
+  if (memory) {
+    parts.push('', '## Memory', '', memory);
   }
 
   if (projectContext) {

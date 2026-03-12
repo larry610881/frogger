@@ -26,6 +26,8 @@ vi.mock('@frogger/core', () => {
     loadProjectContext: vi.fn().mockResolvedValue(undefined),
     buildSystemPrompt: vi.fn().mockReturnValue('system prompt'),
     generateRepoMap: vi.fn().mockResolvedValue(undefined),
+    loadRules: vi.fn().mockReturnValue(undefined),
+    loadMemory: vi.fn().mockReturnValue(undefined),
     runAgent: vi.fn(),
   };
 });

@@ -21,6 +21,11 @@ export const agentMode: ModeConfig = {
     'git-push',
     'git-pull',
     'git-clone',
+    'test-runner',
+    'save-memory',
+    'web-search',
+    'gh-issue',
+    'gh-pr',
   ] as const,
   approvalPolicy: 'confirm-writes',
   systemPromptSuffix: `You are in AGENT mode. You have full access to read, write, execute commands, and manage git.

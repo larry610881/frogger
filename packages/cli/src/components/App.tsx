@@ -12,6 +12,7 @@ import { WelcomeBanner, type SessionSummary } from './WelcomeBanner.js';
 import { PermissionPrompt } from './PermissionPrompt.js';
 import { InitSetup } from './InitSetup.js';
 import { StreamingStats } from './StreamingStats.js';
+import { ThinkingView } from './ThinkingView.js';
 import { useAgent } from '../hooks/useAgent.js';
 import { useMode } from '../hooks/useMode.js';
 
@@ -20,6 +21,8 @@ interface AppProps {
   initialMode?: string;
   provider?: string;
   model?: string;
+  thinking?: { enabled: boolean; budgetTokens: number };
+  notifications?: { enabled: boolean; minDurationMs?: number };
 }
 
 export interface ChatMessage {
@@ -39,7 +42,7 @@ function formatTimeAgo(dateStr: string): string {
   return `${days}d ago`;
 }
 
-export function App({ initialPrompt, initialMode, provider, model }: AppProps): React.ReactElement {
+export function App({ initialPrompt, initialMode, provider, model, thinking, notifications }: AppProps): React.ReactElement {
   const { mode, setMode, cycleMode } = useMode((initialMode as ModeName) ?? 'agent');
   const [history, setHistory] = useState<ChatMessage[]>([]);
   const [activeProvider, setActiveProvider] = useState(provider ?? 'deepseek');
@@ -52,11 +55,13 @@ export function App({ initialPrompt, initialMode, provider, model }: AppProps): 
     [history],
   );
 
-  const { isStreaming, streamingText, liveUsage, pendingToolCall, pendingPermission, contextBudget, commandHints, submit, respondPermission } = useAgent({
+  const { isStreaming, streamingText, thinkingText, liveUsage, pendingToolCall, pendingPermission, contextBudget, commandHints, submit, respondPermission } = useAgent({
     provider: activeProvider,
     model: activeModel,
     mode,
     initialPrompt,
+    thinking,
+    notifications,
     onMessage: (msg) => setHistory(prev => [...prev, msg]),
     onModeChange: setMode,
     onClearHistory: () => setHistory([]),
@@ -126,7 +131,9 @@ export function App({ initialPrompt, initialMode, provider, model }: AppProps): 
         />
       )}
 
-      {isStreaming && !streamingText && !pendingToolCall && <Spinner label="Thinking..." />}
+      {isStreaming && !streamingText && !pendingToolCall && !pendingPermission && (
+        thinkingText ? <ThinkingView text={thinkingText} /> : <Spinner label="Thinking..." />
+      )}
 
       <Text dimColor>{'─'.repeat(process.stdout.columns || 80)}</Text>
       <InputBox onSubmit={submit} disabled={isStreaming} cycleMode={cycleMode} commands={commandHints} inputHistory={inputHistory} />

@@ -21,6 +21,17 @@ export const costCommand: SlashCommand = {
       `  Total tokens:      ${fmt(usage.totalTokens)}`,
     ];
 
+    if (usage.reasoningTokens) {
+      lines.push(`  Reasoning tokens:  ${fmt(usage.reasoningTokens)}`);
+    }
+    if (usage.cacheReadTokens || usage.cacheCreationTokens) {
+      lines.push('');
+      lines.push('  Cache:');
+      lines.push(`    Cache read tokens:     ${fmt(usage.cacheReadTokens ?? 0)}`);
+      lines.push(`    Cache creation tokens: ${fmt(usage.cacheCreationTokens ?? 0)}`);
+    }
+
+    lines.push('');
     if (usage.estimatedCost !== null) {
       lines.push(`  Estimated cost:    $${usage.estimatedCost.toFixed(4)}`);
     } else {

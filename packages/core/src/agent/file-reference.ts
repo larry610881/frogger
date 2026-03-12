@@ -34,11 +34,12 @@ export async function resolveFileReferences(
   const errors: FileReferenceResult['errors'] = [];
   const tokensToRemove: string[] = [];
 
-  const regex = /@([\w./\-]+)/g;
+  // Match @"path with spaces" (quoted) or @path/to/file (unquoted)
+  const regex = /@"([^"]+)"|@([\w./\-]+)/g;
   let match: RegExpExecArray | null;
 
   while ((match = regex.exec(text)) !== null) {
-    const matchedPath = match[1];
+    const matchedPath = match[1] ?? match[2]; // [1] = quoted, [2] = unquoted
     const fullToken = match[0];
     const resolvedPath = path.resolve(workingDirectory, matchedPath);
 

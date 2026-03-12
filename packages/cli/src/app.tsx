@@ -5,6 +5,24 @@ import { APP_VERSION } from '@frogger/shared';
 import { App } from './components/App.js';
 import { InitSetup } from './components/InitSetup.js';
 import { ProviderAddSetup } from './components/ProviderAddSetup.js';
+import { sessionState } from './session-state.js';
+
+function formatTimeAgo(isoDate: string): string {
+  const diff = Date.now() - new Date(isoDate).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.floor(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+function printResumeHint(): void {
+  if (sessionState.sessionId && sessionState.hasMessages) {
+    console.log('');
+    console.log(`To resume this session, run: frogger --resume ${sessionState.sessionId}`);
+    console.log('Or to continue the latest session here: frogger -c');
+  }
+}
 
 function renderInit(): void {
   const { unmount } = render(
@@ -23,13 +41,15 @@ function renderApp(opts: {
   resume?: string;
   continue?: boolean;
   verbose?: boolean;
+  thinking?: boolean;
+  notify?: boolean;
 }): void {
   // Lazy check: if no config and no API key in env, guide user to init
   import('@frogger/core').then(async ({ loadConfig, SessionManager, setLogLevel }) => {
     if (opts.verbose) {
       setLogLevel('debug');
     }
-    const config = loadConfig({ provider: opts.provider, model: opts.model });
+    const config = loadConfig({ provider: opts.provider, model: opts.model, thinking: opts.thinking, notify: opts.notify });
     if (!config.apiKey) {
       console.log('🐸 No API key found. Running setup...\n');
       renderInit();
@@ -72,14 +92,37 @@ function renderApp(opts: {
       }
     }
 
-    render(
+    // Startup hint: detect recent session (only when not resuming)
+    if (!resumePrompt) {
+      const sm = new SessionManager();
+      const recent = await sm.getLatestForDirectory(process.cwd());
+      if (recent) {
+        const ago = formatTimeAgo(recent.updatedAt);
+        console.log(`💡 Previous session found (${ago}). Resume with: frogger -c\n`);
+      }
+    }
+
+    const instance = render(
       <App
         initialPrompt={resumePrompt ?? opts.prompt}
         initialMode={opts.mode}
         provider={opts.provider ?? config.provider}
         model={opts.model ?? config.model}
+        thinking={config.thinking}
+        notifications={config.notifications}
       />
     );
+
+    // Normal exit: print resume hint after Ink unmounts
+    instance.waitUntilExit().then(() => printResumeHint()).catch((e) => console.error('[WARN] Exit handler:', e instanceof Error ? e.message : e));
+
+    // Signal exit: print resume hint on SIGTERM/SIGHUP
+    const onSignal = () => {
+      printResumeHint();
+      process.exit(0);
+    };
+    process.on('SIGTERM', onSignal);
+    process.on('SIGHUP', onSignal);
   });
 }
 
@@ -243,6 +286,10 @@ export function startCli(): void {
     .option('--resume <id>', 'Resume a previous session (use "latest" for most recent)')
     .option('-c, --continue', 'Continue the last session for the current directory')
     .option('-v, --verbose', 'Enable debug logging (stderr)')
+    .option('--thinking', 'Enable extended thinking (Anthropic only)')
+    .option('--no-thinking', 'Disable extended thinking')
+    .option('--notify', 'Enable desktop notifications on task completion')
+    .option('--no-notify', 'Disable desktop notifications')
     .action(async (prompt, options) => {
       if (options.pipe) {
         // Pipe mode: read prompt from arg or stdin
@@ -280,6 +327,8 @@ export function startCli(): void {
         resume: options.resume,
         continue: options.continue,
         verbose: options.verbose,
+        thinking: options.thinking,
+        notify: options.notify,
       });
     });
 

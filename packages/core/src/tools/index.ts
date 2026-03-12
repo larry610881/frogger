@@ -16,6 +16,11 @@ import { createGitRemoteTool, gitRemoteMetadata } from './git-remote.js';
 import { createGitPushTool, gitPushMetadata } from './git-push.js';
 import { createGitPullTool, gitPullMetadata } from './git-pull.js';
 import { createGitCloneTool, gitCloneMetadata } from './git-clone.js';
+import { createTestRunnerTool, testRunnerMetadata } from './test-runner.js';
+import { createSaveMemoryTool, saveMemoryMetadata } from './save-memory.js';
+import { createWebSearchTool, webSearchMetadata } from './web-search.js';
+import { createGhIssueTool, ghIssueMetadata } from './gh-issue.js';
+import { createGhPrTool, ghPrMetadata } from './gh-pr.js';
 
 export { ToolRegistry, type PermissionRequestCallback } from './registry.js';
 export { assertWithinBoundary } from './security.js';
@@ -36,6 +41,12 @@ export { createGitRemoteTool, gitRemoteMetadata } from './git-remote.js';
 export { createGitPushTool, gitPushMetadata } from './git-push.js';
 export { createGitPullTool, gitPullMetadata } from './git-pull.js';
 export { createGitCloneTool, gitCloneMetadata } from './git-clone.js';
+export { createTestRunnerTool, testRunnerMetadata } from './test-runner.js';
+export { createSaveMemoryTool, saveMemoryMetadata } from './save-memory.js';
+export { createWebSearchTool, webSearchMetadata } from './web-search.js';
+export type { SearchProvider, SearchResult } from './web-search.js';
+export { createGhIssueTool, ghIssueMetadata } from './gh-issue.js';
+export { createGhPrTool, ghPrMetadata } from './gh-pr.js';
 export {
   detectGitAuthStatus, resolveGitAuthEnv, resolveGitAuthEnvForUrl,
   loadGitCredentials, saveGitCredentials, extractHostFromRemoteUrl, filterSensitiveOutput,
@@ -62,6 +73,11 @@ export function createToolRegistry(workingDirectory: string): ToolRegistry {
   registry.register('git-push', createGitPushTool(workingDirectory), gitPushMetadata);
   registry.register('git-pull', createGitPullTool(workingDirectory), gitPullMetadata);
   registry.register('git-clone', createGitCloneTool(workingDirectory), gitCloneMetadata);
+  registry.register('test-runner', createTestRunnerTool(workingDirectory), testRunnerMetadata);
+  registry.register('save-memory', createSaveMemoryTool(), saveMemoryMetadata);
+  registry.register('web-search', createWebSearchTool(workingDirectory), webSearchMetadata);
+  registry.register('gh-issue', createGhIssueTool(workingDirectory), ghIssueMetadata);
+  registry.register('gh-pr', createGhPrTool(workingDirectory), ghPrMetadata);
 
   return registry;
 }

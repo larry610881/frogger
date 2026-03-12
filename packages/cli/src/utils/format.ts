@@ -18,6 +18,11 @@ export const COMMAND_HINTS: CommandHint[] = [
   { name: 'resume', description: 'Resume a previous session' },
   { name: 'git-auth', description: 'Check git auth status / configure credentials' },
   { name: 'rewind', description: 'Rewind to a previous checkpoint' },
+  { name: 'mcp', description: 'List MCP servers and tools' },
+  { name: 'issue', description: 'Start working on a GitHub issue' },
+  { name: 'bg', description: 'Start a background task' },
+  { name: 'tasks', description: 'List background tasks' },
+  { name: 'task', description: 'View or cancel a background task' },
 ];
 
 export interface ChatMessage {
@@ -40,10 +45,27 @@ export function calculateCost(
   promptTokens: number,
   completionTokens: number,
   model: string,
+  options?: {
+    reasoningTokens?: number;
+    cacheReadTokens?: number;
+    cacheCreationTokens?: number;
+  },
 ): number | null {
   const pricing = MODEL_PRICING[model];
   if (!pricing) return null;
-  return (promptTokens * pricing.input + completionTokens * pricing.output) / 1_000_000;
+
+  const { reasoningTokens = 0, cacheReadTokens = 0, cacheCreationTokens = 0 } = options ?? {};
+
+  // Reasoning tokens are billed at output pricing
+  const outputTokens = completionTokens + reasoningTokens;
+
+  // Cache tokens: reads at 10% input price, creation at 125% input price
+  // Subtract cached tokens from regular prompt tokens to avoid double-counting
+  const regularPromptTokens = Math.max(0, promptTokens - cacheReadTokens - cacheCreationTokens);
+  const cacheReadCost = cacheReadTokens * pricing.input * 0.1;
+  const cacheCreationCost = cacheCreationTokens * pricing.input * 1.25;
+
+  return (regularPromptTokens * pricing.input + outputTokens * pricing.output + cacheReadCost + cacheCreationCost) / 1_000_000;
 }
 
 export function formatStats(elapsedMs: number, tokens?: TokenUsage, model?: string): string {
@@ -54,11 +76,21 @@ export function formatStats(elapsedMs: number, tokens?: TokenUsage, model?: stri
 
   const parts = [`Total: ${time}`];
   if (tokens) {
-    parts.push(
-      `${formatTokens(tokens.totalTokens)} tokens (in: ${formatTokens(tokens.promptTokens)}, out: ${formatTokens(tokens.completionTokens)})`,
-    );
+    let tokenDetail = `${formatTokens(tokens.totalTokens)} tokens (in: ${formatTokens(tokens.promptTokens)}, out: ${formatTokens(tokens.completionTokens)}`;
+    if (tokens.reasoningTokens) {
+      tokenDetail += `, reasoning: ${formatTokens(tokens.reasoningTokens)}`;
+    }
+    if (tokens.cacheReadTokens) {
+      tokenDetail += `, cache hit: ${formatTokens(tokens.cacheReadTokens)}`;
+    }
+    tokenDetail += ')';
+    parts.push(tokenDetail);
     if (model) {
-      const cost = calculateCost(tokens.promptTokens, tokens.completionTokens, model);
+      const cost = calculateCost(tokens.promptTokens, tokens.completionTokens, model, {
+        reasoningTokens: tokens.reasoningTokens,
+        cacheReadTokens: tokens.cacheReadTokens,
+        cacheCreationTokens: tokens.cacheCreationTokens,
+      });
       if (cost !== null) {
         parts.push(`Cost: $${cost.toFixed(2)}`);
       }

@@ -47,6 +47,8 @@ describe('ModeManager', () => {
       'glob',
       'grep',
       'list-files',
+      'test-runner',
+      'web-search',
     ]);
 
     manager.setMode('agent');
@@ -68,6 +70,11 @@ describe('ModeManager', () => {
       'git-push',
       'git-pull',
       'git-clone',
+      'test-runner',
+      'save-memory',
+      'web-search',
+      'gh-issue',
+      'gh-pr',
     ]);
   });
 

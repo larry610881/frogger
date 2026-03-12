@@ -73,4 +73,29 @@ describe('confirmed-permissions', () => {
     const nonExistent = path.join(tmpDir, 'project', '.frogger', 'permissions.json');
     expect(isPermissionsConfirmed(nonExistent)).toBe(true);
   });
+
+  it('auto-cleans stale entries for non-existent paths', () => {
+    const projectDir = path.join(tmpDir, 'project');
+    const permPath = path.join(projectDir, '.frogger', 'permissions.json');
+    fs.mkdirSync(path.dirname(permPath), { recursive: true });
+    fs.writeFileSync(permPath, JSON.stringify({ allowedTools: ['write-file'] }));
+
+    confirmPermissions(permPath);
+    expect(isPermissionsConfirmed(permPath)).toBe(true);
+
+    // Read the stored hashes file and inject a stale entry
+    const storePath = path.join(tmpDir, '.frogger', 'confirmed-permissions.json');
+    const hashes = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+    hashes['/tmp/nonexistent/path/permissions.json'] = 'deadbeef';
+    fs.writeFileSync(storePath, JSON.stringify(hashes));
+
+    // Loading should trigger cleanup
+    expect(isPermissionsConfirmed(permPath)).toBe(true);
+
+    // Verify stale entry was removed
+    const cleaned = JSON.parse(fs.readFileSync(storePath, 'utf-8'));
+    expect(cleaned['/tmp/nonexistent/path/permissions.json']).toBeUndefined();
+    // Valid entry should remain
+    expect(cleaned[path.resolve(permPath)]).toBeDefined();
+  });
 });

@@ -9,6 +9,7 @@ import {
 } from '../utils/format.js';
 import { useAgentServices } from './useAgentServices.js';
 import { useContextBudget } from './useContextBudget.js';
+import { sessionState } from '../session-state.js';
 
 // Re-export utilities for backward compatibility
 export { formatTokens, calculateCost };
@@ -18,6 +19,8 @@ interface UseAgentOptions {
   model?: string;
   mode: ModeName;
   initialPrompt?: string;
+  thinking?: { enabled: boolean; budgetTokens: number };
+  notifications?: { enabled: boolean; minDurationMs?: number };
   onMessage: (msg: ChatMessage) => void;
   onModeChange?: (mode: ModeName) => void;
   onClearHistory?: () => void;
@@ -28,6 +31,7 @@ interface UseAgentOptions {
 export function useAgent(options: UseAgentOptions) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [streamingText, setStreamingText] = useState('');
+  const [thinkingText, setThinkingText] = useState('');
   const [liveUsage, setLiveUsage] = useState<TokenUsage | null>(null);
   const [pendingToolCall, setPendingToolCall] = useState<PendingToolCall | null>(null);
   const [pendingPermission, setPendingPermission] = useState<{
@@ -46,8 +50,13 @@ export function useAgent(options: UseAgentOptions) {
   const totalTokensRef = useRef(0);
   const sessionPromptTokensRef = useRef(0);
   const sessionCompletionTokensRef = useRef(0);
+  const sessionReasoningTokensRef = useRef(0);
+  const sessionCacheReadTokensRef = useRef(0);
+  const sessionCacheCreationTokensRef = useRef(0);
   // Queue for auto-execute after plan mode
   const autoExecuteRef = useRef<string | null>(null);
+  // MCP client manager — persists across turns, cleaned up on unmount
+  const mcpClientManagerRef = useRef<{ closeAll(): Promise<void> } | null>(null);
   const modeRef = useRef(options.mode);
   modeRef.current = options.mode;
 
@@ -119,20 +128,24 @@ export function useAgent(options: UseAgentOptions) {
 
     setIsStreaming(true);
     setStreamingText('');
+    setThinkingText('');
     setLiveUsage(null);
 
     const taskStart = performance.now();
 
     try {
-      const { runAgent, loadConfig, createModel, ModeManager, buildSystemPrompt, createAgentTools, loadProjectContext, generateRepoMap } = await import('@frogger/core');
+      const { runAgent, loadConfig, createModel, ModeManager, buildSystemPrompt, createAgentTools, loadProjectContext, generateRepoMap, loadRules, loadMemory } = await import('@frogger/core');
 
       const config = loadConfig({ provider: options.provider, model: options.model });
       const model = createModel(config.provider, config.model, { apiKey: config.apiKey });
+      const providerEntry = lookupProvider(config.provider);
       const modeManager = new ModeManager(activeMode);
       const modeConfig = modeManager.getCurrentMode();
       const projectContext = await loadProjectContext(workingDirectory);
       const repoMap = await generateRepoMap({ workingDirectory });
-      const systemPrompt = buildSystemPrompt({ modeConfig, workingDirectory, projectContext, repoMap });
+      const rules = loadRules(workingDirectory);
+      const memory = loadMemory();
+      const systemPrompt = buildSystemPrompt({ modeConfig, workingDirectory, projectContext, repoMap, rules, memory });
 
       const permissionCallback: PermissionRequestCallback = (toolName, args) => {
         return new Promise((resolve) => {
@@ -144,8 +157,8 @@ export function useAgent(options: UseAgentOptions) {
       // Ensure shared checkpoint manager is ready (also used by /rewind)
       await ensureCheckpointManager();
 
-      // createAgentTools: encapsulates registry + permission + checkpoint wiring
-      const { tools } = await createAgentTools({
+      // createAgentTools: encapsulates registry + permission + checkpoint wiring + MCP
+      const { tools, mcpClientManager } = await createAgentTools({
         workingDirectory,
         allowedTools: [...modeConfig.allowedTools],
         policy: modeConfig.approvalPolicy,
@@ -153,6 +166,11 @@ export function useAgent(options: UseAgentOptions) {
         existingCheckpointManager: checkpointManagerRef.current!,
         getMessageCount: () => messagesRef.current.length,
       });
+
+      // Track MCP client manager for cleanup
+      if (mcpClientManager) {
+        mcpClientManagerRef.current = mcpClientManager;
+      }
 
       let currentText = '';
       let fullText = '';
@@ -165,12 +183,19 @@ export function useAgent(options: UseAgentOptions) {
         messages: [...messagesRef.current],
         tools,
         abortSignal: abortController.signal,
+        thinking: options.thinking,
+        providerType: providerEntry?.type,
       })) {
         switch (event.type) {
           case 'text_delta':
+            setThinkingText('');
             currentText += event.textDelta;
             fullText += event.textDelta;
             setStreamingText(currentText);
+            break;
+
+          case 'thinking_delta':
+            setThinkingText(prev => prev + event.thinkingDelta);
             break;
 
           case 'tool_call': {
@@ -229,6 +254,9 @@ export function useAgent(options: UseAgentOptions) {
             // Accumulate session-level token usage
             sessionPromptTokensRef.current += tokens?.promptTokens ?? 0;
             sessionCompletionTokensRef.current += tokens?.completionTokens ?? 0;
+            sessionReasoningTokensRef.current += tokens?.reasoningTokens ?? 0;
+            sessionCacheReadTokensRef.current += tokens?.cacheReadTokens ?? 0;
+            sessionCacheCreationTokensRef.current += tokens?.cacheCreationTokens ?? 0;
 
             // Update context budget after completion
             await updateBudget(systemPrompt);
@@ -246,8 +274,21 @@ export function useAgent(options: UseAgentOptions) {
                 totalTokens: totalTokensRef.current,
                 existingId: sessionIdRef.current ?? undefined,
               });
+              sessionState.sessionId = sessionIdRef.current;
+              sessionState.hasMessages = messagesRef.current.length > 0;
             } catch {
               // Session save failure is non-critical
+            }
+
+            // Desktop notification for long-running tasks
+            if (options.notifications?.enabled && process.stdin.isTTY) {
+              const { shouldNotify, sendNotification, formatNotificationMessage } = await import('../utils/notify.js');
+              if (shouldNotify(elapsed, options.notifications.minDurationMs)) {
+                await sendNotification({
+                  title: 'Frogger — Task Complete',
+                  message: formatNotificationMessage(elapsed, tokens),
+                });
+              }
             }
             break;
           }
@@ -329,7 +370,14 @@ export function useAgent(options: UseAgentOptions) {
           promptTokens: sessionPromptTokensRef.current,
           completionTokens: sessionCompletionTokensRef.current,
           totalTokens: sessionTotalTokens,
-          estimatedCost: calculateCost(sessionPromptTokensRef.current, sessionCompletionTokensRef.current, options.model ?? config.model),
+          estimatedCost: calculateCost(sessionPromptTokensRef.current, sessionCompletionTokensRef.current, options.model ?? config.model, {
+            reasoningTokens: sessionReasoningTokensRef.current,
+            cacheReadTokens: sessionCacheReadTokensRef.current,
+            cacheCreationTokens: sessionCacheCreationTokensRef.current,
+          }),
+          reasoningTokens: sessionReasoningTokensRef.current,
+          cacheReadTokens: sessionCacheReadTokensRef.current,
+          cacheCreationTokens: sessionCacheCreationTokensRef.current,
         },
         onClearHistory: options.onClearHistory,
         onProviderModelChange: (provider, modelName) => {
@@ -375,6 +423,13 @@ export function useAgent(options: UseAgentOptions) {
     }
   }, [options.initialPrompt, submit]);
 
+  // Cleanup MCP connections on unmount
+  useEffect(() => {
+    return () => {
+      mcpClientManagerRef.current?.closeAll().catch((e) => console.error('[WARN] MCP cleanup:', e instanceof Error ? e.message : e));
+    };
+  }, []);
+
   const respondPermission = useCallback((response: PermissionResponse) => {
     if (pendingPermission) {
       pendingPermission.resolve(response);
@@ -383,5 +438,5 @@ export function useAgent(options: UseAgentOptions) {
     }
   }, [pendingPermission]);
 
-  return { isStreaming, streamingText, liveUsage, pendingToolCall, pendingPermission, contextBudget, commandHints: COMMAND_HINTS, submit, respondPermission };
+  return { isStreaming, streamingText, thinkingText, liveUsage, pendingToolCall, pendingPermission, contextBudget, commandHints: COMMAND_HINTS, submit, respondPermission };
 }

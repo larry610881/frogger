@@ -2,12 +2,13 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import { generateRepoMap } from '../repo-map.js';
+import { generateRepoMap, clearRepoMapCache } from '../repo-map.js';
 
 describe('generateRepoMap', () => {
   let tmpDir: string;
 
   beforeEach(async () => {
+    clearRepoMapCache();
     tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'repo-map-'));
   });
 
@@ -63,6 +64,31 @@ describe('generateRepoMap', () => {
     expect(result).toBeDefined();
     expect(result!.length).toBeLessThanOrEqual(120); // Allow some slack for truncation notice
     expect(result).toContain('... (truncated)');
+  });
+
+  it('returns cached result within TTL window', async () => {
+    await fs.writeFile(path.join(tmpDir, 'a.txt'), '');
+
+    const first = await generateRepoMap({ workingDirectory: tmpDir });
+    expect(first).toContain('a.txt');
+
+    // Add a new file — should still get cached result
+    await fs.writeFile(path.join(tmpDir, 'b.txt'), '');
+    const second = await generateRepoMap({ workingDirectory: tmpDir });
+    expect(second).toBe(first); // Same reference = cache hit
+    expect(second).not.toContain('b.txt');
+  });
+
+  it('returns fresh result after cache is cleared', async () => {
+    await fs.writeFile(path.join(tmpDir, 'a.txt'), '');
+
+    const first = await generateRepoMap({ workingDirectory: tmpDir });
+    expect(first).toContain('a.txt');
+
+    await fs.writeFile(path.join(tmpDir, 'b.txt'), '');
+    clearRepoMapCache();
+    const second = await generateRepoMap({ workingDirectory: tmpDir });
+    expect(second).toContain('b.txt');
   });
 
   it('excludes node_modules and .git', async () => {

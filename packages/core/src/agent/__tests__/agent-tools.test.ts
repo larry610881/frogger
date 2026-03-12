@@ -70,14 +70,17 @@ describe('createAgentTools', () => {
     expect(getMockConstructorCalls()).toHaveLength(0);
   });
 
-  it('does not pass onBeforeExecute when enableCheckpoints is false', async () => {
+  it('passes hooks-based onBeforeExecute even when enableCheckpoints is false', async () => {
     await createAgentTools(makeOptions({ enableCheckpoints: false }));
 
+    // With hooks system, onBeforeExecute is always provided (for hook execution).
+    // The 6th arg (onAfterExecute) may be undefined if no PostToolUse hooks are configured.
     expect(mockGetToolsWithPermission).toHaveBeenCalledWith(
       ['read-file', 'write-file'],
       'confirm-writes',
       expect.any(Function),
       '/tmp/test-project',
+      expect.any(Function),
       undefined,
     );
   });
@@ -121,6 +124,7 @@ describe('createAgentTools', () => {
       callback,
       '/tmp/test-project',
       expect.any(Function), // onBeforeExecute
+      undefined, // onAfterExecute (no PostToolUse hooks configured)
     );
   });
 

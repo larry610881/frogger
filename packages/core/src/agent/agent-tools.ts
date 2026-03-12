@@ -4,6 +4,7 @@ import { createToolRegistry, type PermissionRequestCallback } from '../tools/ind
 import { CheckpointManager } from './checkpoint.js';
 import { getProjectPermissionsPath, loadPermissionRules, type PermissionRulesFile } from '../permission/rules.js';
 import { isPermissionsConfirmed, confirmPermissions } from '../permission/confirmed-permissions.js';
+import { logger } from '../utils/logger.js';
 
 export interface CreateAgentToolsOptions {
   workingDirectory: string;
@@ -25,6 +26,8 @@ export interface CreateAgentToolsOptions {
 export interface AgentToolsResult {
   tools: Record<string, Tool>;
   checkpointManager: CheckpointManager | null;
+  /** MCP client manager — call closeAll() on exit */
+  mcpClientManager: { closeAll(): Promise<void> } | null;
 }
 
 /**
@@ -66,17 +69,56 @@ export async function createAgentTools(
 
   let checkpointManager: CheckpointManager | null = existingCheckpointManager ?? null;
   let onBeforeExecute: ((toolName: string, args: Record<string, unknown>) => Promise<void>) | undefined;
+  let onAfterExecute: ((toolName: string, args: Record<string, unknown>, result: string) => Promise<void>) | undefined;
 
   if (enableCheckpoints) {
     if (!checkpointManager) {
       const isGitRepo = await CheckpointManager.detectGitRepo(workingDirectory);
       checkpointManager = new CheckpointManager({ workingDirectory, isGitRepo });
     }
+  }
+
+  // Load hooks config (dynamic import to avoid breaking tests)
+  try {
+    const { loadHooksConfig, runHooks } = await import('../hooks/index.js');
+    const hooksConfig = loadHooksConfig(workingDirectory);
+
+    const hasPreHooks = hooksConfig.hooks.PreToolUse.length > 0;
+    const hasPostHooks = hooksConfig.hooks.PostToolUse.length > 0;
 
     onBeforeExecute = async (toolName: string, args: Record<string, unknown>) => {
-      const messageIndex = getMessageCount?.() ?? 0;
-      await checkpointManager!.createCheckpoint(toolName, args, messageIndex);
+      // 1. Checkpoint (if enabled)
+      if (enableCheckpoints && checkpointManager) {
+        const messageIndex = getMessageCount?.() ?? 0;
+        await checkpointManager.createCheckpoint(toolName, args, messageIndex);
+      }
+      // 2. PreToolUse hooks
+      if (hasPreHooks) {
+        const results = await runHooks(hooksConfig.hooks.PreToolUse, {
+          toolName, toolArgs: args, hookType: 'PreToolUse', workingDirectory,
+        });
+        const failed = results.find(r => !r.success);
+        if (failed) {
+          throw new Error(`Blocked by PreToolUse hook: ${failed.stderr || 'non-zero exit'}`);
+        }
+      }
     };
+
+    if (hasPostHooks) {
+      onAfterExecute = async (toolName: string, args: Record<string, unknown>, result: string) => {
+        await runHooks(hooksConfig.hooks.PostToolUse, {
+          toolName, toolArgs: args, toolResult: result, hookType: 'PostToolUse', workingDirectory,
+        });
+      };
+    }
+  } catch {
+    // Hooks module not available — fall back to checkpoint-only onBeforeExecute
+    if (enableCheckpoints && checkpointManager) {
+      onBeforeExecute = async (toolName: string, args: Record<string, unknown>) => {
+        const messageIndex = getMessageCount?.() ?? 0;
+        await checkpointManager!.createCheckpoint(toolName, args, messageIndex);
+      };
+    }
   }
 
   const tools = registry.getToolsWithPermission(
@@ -85,7 +127,52 @@ export async function createAgentTools(
     permissionCallback,
     workingDirectory,
     onBeforeExecute,
+    onAfterExecute,
   );
 
-  return { tools, checkpointManager };
+  // Load and connect MCP servers (dynamic import to avoid breaking tests)
+  let mcpClientManager: { closeAll(): Promise<void> } | null = null;
+  try {
+    const { loadMCPConfig, MCPClientManager, convertMCPTools } = await import('../mcp/index.js');
+    const mcpConfig = loadMCPConfig(workingDirectory);
+    const enabledServers = Object.entries(mcpConfig.servers).filter(([, cfg]) => cfg.enabled);
+
+    if (enabledServers.length > 0) {
+      const manager = new MCPClientManager();
+      mcpClientManager = manager;
+
+      for (const [name, serverConfig] of enabledServers) {
+        try {
+          await manager.connect(name, serverConfig);
+          const mcpTools = await manager.listTools(name);
+          const { tools: converted, metadata } = convertMCPTools(name, mcpTools, manager);
+
+          // Register MCP tools with confirm permission and merge into tools
+          for (const meta of metadata) {
+            registry.register(meta.name, converted[meta.name], meta);
+          }
+
+          // Add MCP tools with permission wrapping (always confirm policy for external tools)
+          const mcpToolNames = metadata.map(m => m.name);
+          const mcpWrapped = registry.getToolsWithPermission(
+            mcpToolNames,
+            'confirm-writes',
+            permissionCallback,
+            workingDirectory,
+            onBeforeExecute,
+            onAfterExecute,
+          );
+          Object.assign(tools, mcpWrapped);
+
+          logger.debug(`MCP server "${name}": ${mcpTools.length} tool(s) loaded`);
+        } catch (err) {
+          logger.warn(`Failed to connect MCP server "${name}": ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+    }
+  } catch (err) {
+    logger.warn(`MCP initialization failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  return { tools, checkpointManager, mcpClientManager };
 }

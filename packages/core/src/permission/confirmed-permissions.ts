@@ -10,12 +10,26 @@ function getConfirmedPermissionsPath(): string {
   return path.join(homedir(), CONFIG_DIR, 'confirmed-permissions.json');
 }
 
-/** Load the confirmed permissions hash map */
+/** Load the confirmed permissions hash map, filtering out stale entries for non-existent paths */
 function loadConfirmedHashes(): Record<string, string> {
   const filePath = getConfirmedPermissionsPath();
   if (!existsSync(filePath)) return {};
   try {
-    return JSON.parse(readFileSync(filePath, 'utf-8'));
+    const raw: Record<string, string> = JSON.parse(readFileSync(filePath, 'utf-8'));
+    // Auto-clean: remove entries where the file no longer exists
+    let cleaned = false;
+    const result: Record<string, string> = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (existsSync(key)) {
+        result[key] = value;
+      } else {
+        cleaned = true;
+      }
+    }
+    if (cleaned) {
+      saveConfirmedHashes(result);
+    }
+    return result;
   } catch {
     return {};
   }

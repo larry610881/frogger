@@ -3,7 +3,7 @@ import type { ModeConfig } from '@frogger/shared';
 export const askMode: ModeConfig = {
   name: 'ask',
   displayName: 'Ask',
-  allowedTools: ['read-file', 'glob', 'grep', 'list-files'] as const,
+  allowedTools: ['read-file', 'glob', 'grep', 'list-files', 'test-runner', 'web-search'] as const,
   approvalPolicy: 'auto',
   systemPromptSuffix: `You are in ASK mode. You can only read files and search. You cannot modify anything.
 

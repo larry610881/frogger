@@ -17,34 +17,45 @@ export function getLogLevel(): LogLevel {
   return currentLevel;
 }
 
-function shouldLog(level: LogLevel): boolean {
-  return LEVELS[level] >= LEVELS[currentLevel];
-}
-
 function formatMessage(level: LogLevel, message: string): string {
   const tag = level.toUpperCase().padEnd(5);
   return `[${tag}] ${message}`;
 }
 
-export const logger = {
-  debug(message: string): void {
-    if (shouldLog('debug')) {
-      console.error(formatMessage('debug', message));
-    }
-  },
-  info(message: string): void {
-    if (shouldLog('info')) {
-      console.error(formatMessage('info', message));
-    }
-  },
-  warn(message: string): void {
-    if (shouldLog('warn')) {
-      console.error(formatMessage('warn', message));
-    }
-  },
-  error(message: string): void {
-    if (shouldLog('error')) {
-      console.error(formatMessage('error', message));
-    }
-  },
-};
+export interface Logger {
+  debug(message: string): void;
+  info(message: string): void;
+  warn(message: string): void;
+  error(message: string): void;
+}
+
+/**
+ * Create a logger instance with its own level.
+ * Useful for subsystem-specific logging.
+ */
+export function createLogger(level?: LogLevel): Logger {
+  const instanceLevel = level;
+
+  function shouldLog(msgLevel: LogLevel): boolean {
+    const effectiveLevel = instanceLevel ?? currentLevel;
+    return LEVELS[msgLevel] >= LEVELS[effectiveLevel];
+  }
+
+  return {
+    debug(message: string): void {
+      if (shouldLog('debug')) console.error(formatMessage('debug', message));
+    },
+    info(message: string): void {
+      if (shouldLog('info')) console.error(formatMessage('info', message));
+    },
+    warn(message: string): void {
+      if (shouldLog('warn')) console.error(formatMessage('warn', message));
+    },
+    error(message: string): void {
+      if (shouldLog('error')) console.error(formatMessage('error', message));
+    },
+  };
+}
+
+/** Default global logger instance. Uses the global log level. */
+export const logger: Logger = createLogger();

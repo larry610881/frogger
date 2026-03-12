@@ -143,6 +143,35 @@ describe('resolveFileReferences', () => {
     expect(result.imageReferences).toHaveLength(0);
   });
 
+  it('resolves @"quoted path" with spaces', async () => {
+    const dir = path.join(tmpDir, 'my folder');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'file name.txt'), 'spaced content');
+
+    const result = await resolveFileReferences(
+      'read @"my folder/file name.txt" please',
+      tmpDir,
+    );
+    expect(result.cleanText).toBe('read please');
+    expect(result.references).toHaveLength(1);
+    expect(result.references[0].path).toBe('my folder/file name.txt');
+    expect(result.references[0].content).toBe('spaced content');
+  });
+
+  it('resolves both quoted and unquoted refs in same input', async () => {
+    const dir = path.join(tmpDir, 'a b');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'c.txt'), 'from spaced');
+
+    const result = await resolveFileReferences(
+      'compare @hello.txt with @"a b/c.txt"',
+      tmpDir,
+    );
+    expect(result.references).toHaveLength(2);
+    expect(result.references[0].path).toBe('hello.txt');
+    expect(result.references[1].path).toBe('a b/c.txt');
+  });
+
   it('rejects images exceeding 5MB', async () => {
     // Create a file > 5MB
     const largeBuf = Buffer.alloc(6 * 1024 * 1024, 0x00);

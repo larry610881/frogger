@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { execa } from 'execa';
+import { logger } from '../utils/logger.js';
 
 export interface FileSnapshot {
   path: string;         // Relative path from workingDirectory
@@ -149,7 +150,7 @@ export class CheckpointManager {
       try {
         if (snapshot.content === null) {
           // File didn't exist before - delete it
-          await fs.unlink(resolved).catch(() => {});
+          await fs.unlink(resolved).catch((e) => logger.warn(`Checkpoint cleanup: ${e instanceof Error ? e.message : e}`));
           deletedFiles.push(snapshot.path);
         } else {
           await fs.writeFile(resolved, snapshot.content, 'utf-8');

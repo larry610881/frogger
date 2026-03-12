@@ -7,6 +7,20 @@ export interface RepoMapOptions {
   maxOutputChars?: number; // default 8000
 }
 
+/** Cache entry with TTL */
+interface CacheEntry {
+  result: string | undefined;
+  timestamp: number;
+}
+
+const CACHE_TTL_MS = 30_000; // 30 seconds
+const repoMapCache = new Map<string, CacheEntry>();
+
+/** Clear the repo map cache (for testing). */
+export function clearRepoMapCache(): void {
+  repoMapCache.clear();
+}
+
 /**
  * Generate a file tree representation of the repository.
  * Uses globby (gitignore-aware) to list files and builds an indented tree.
@@ -17,6 +31,13 @@ export interface RepoMapOptions {
 export async function generateRepoMap(options: RepoMapOptions): Promise<string | undefined> {
   const { workingDirectory, maxFiles = 500, maxOutputChars = 8000 } = options;
 
+  // Check cache
+  const cacheKey = `${workingDirectory}:${maxFiles}:${maxOutputChars}`;
+  const cached = repoMapCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
+    return cached.result;
+  }
+
   const files = await globby('**/*', {
     cwd: workingDirectory,
     gitignore: true,
@@ -24,10 +45,15 @@ export async function generateRepoMap(options: RepoMapOptions): Promise<string |
     dot: false,
   });
 
-  if (files.length === 0) return undefined;
+  if (files.length === 0) {
+    repoMapCache.set(cacheKey, { result: undefined, timestamp: Date.now() });
+    return undefined;
+  }
 
   if (files.length > maxFiles) {
-    return `[repo: ${files.length} files, too large for map]`;
+    const tooLarge = `[repo: ${files.length} files, too large for map]`;
+    repoMapCache.set(cacheKey, { result: tooLarge, timestamp: Date.now() });
+    return tooLarge;
   }
 
   // Sort files for consistent output
@@ -37,11 +63,15 @@ export async function generateRepoMap(options: RepoMapOptions): Promise<string |
   const tree = buildTree(files);
   const output = renderTree(tree, '');
 
+  let result: string;
   if (output.length > maxOutputChars) {
-    return output.slice(0, maxOutputChars) + '\n... (truncated)';
+    result = output.slice(0, maxOutputChars) + '\n... (truncated)';
+  } else {
+    result = output;
   }
 
-  return output;
+  repoMapCache.set(cacheKey, { result, timestamp: Date.now() });
+  return result;
 }
 
 interface TreeNode {

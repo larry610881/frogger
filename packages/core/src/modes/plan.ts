@@ -3,7 +3,7 @@ import type { ModeConfig } from '@frogger/shared';
 export const planMode: ModeConfig = {
   name: 'plan',
   displayName: 'Plan',
-  allowedTools: ['read-file', 'glob', 'grep', 'list-files'] as const,
+  allowedTools: ['read-file', 'glob', 'grep', 'list-files', 'test-runner', 'web-search'] as const,
   approvalPolicy: 'auto',
   systemPromptSuffix: `You are in PLAN mode. Your job is to create a HIGH-LEVEL implementation plan — architecture, design decisions, file structure, and approach.
 

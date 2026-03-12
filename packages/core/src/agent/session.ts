@@ -59,7 +59,7 @@ export class SessionManager {
     logger.debug(`Session saved: ${id}`);
 
     // Fire-and-forget cleanup — must never block save or crash the app
-    this.cleanup().catch(() => {});
+    this.cleanup().catch((e) => logger.warn(`Session cleanup failed: ${e instanceof Error ? e.message : e}`));
 
     return id;
   }

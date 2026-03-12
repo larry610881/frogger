@@ -1,5 +1,5 @@
 import { runAgent, loadConfig, createModel, createAgentTools, generateRepoMap } from '@frogger/core';
-import { buildSystemPrompt, ModeManager, loadProjectContext } from '@frogger/core';
+import { buildSystemPrompt, ModeManager, loadProjectContext, loadRules, loadMemory } from '@frogger/core';
 import fs from 'node:fs/promises';
 
 export async function runPipeMode(options: {
@@ -20,9 +20,11 @@ export async function runPipeMode(options: {
   const modeManager = new ModeManager('agent');
   const modeConfig = modeManager.getCurrentMode();
 
-  // 4. Load project context + repo map
+  // 4. Load project context + repo map + rules
   const projectContext = await loadProjectContext(options.workingDirectory);
   const repoMap = await generateRepoMap({ workingDirectory: options.workingDirectory });
+  const rules = loadRules(options.workingDirectory);
+  const memory = loadMemory();
 
   // 5. Build system prompt
   const systemPrompt = buildSystemPrompt({
@@ -30,6 +32,8 @@ export async function runPipeMode(options: {
     workingDirectory: options.workingDirectory,
     projectContext,
     repoMap,
+    rules,
+    memory,
   });
 
   // 6. Create tools via factory — auto-approve all (headless), checkpoints enabled

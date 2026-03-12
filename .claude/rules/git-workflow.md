@@ -93,3 +93,10 @@ refactor/<scope>/<描述>       # 重構
 - 確保 `pnpm test` 通過
 - 確保沒有提交 `.env` 或敏感檔案
 - 使用 `git diff --staged` 確認變更內容
+
+## Changesets 版本管理
+
+- 功能變更（feat/fix）提交後執行 `pnpm changeset` 建立 changeset 檔案
+- Changeset 檔案需一併 commit（`.changeset/*.md`）
+- 版本升級由 `pnpm version`（即 `changeset version`）統一處理
+- 禁止手動修改 package.json 版本號
