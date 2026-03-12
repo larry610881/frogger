@@ -32,7 +32,8 @@ export function useAgentServices(provider: string, model?: string) {
         clearCommand, compactCommand, compactThresholdCommand, modelCommand, setupCommand,
         undoCommand, sessionsCommand, resumeCommand, gitAuthCommand,
         costCommand, contextCommand, doctorCommand, createRewindCommand,
-        loadCustomCommands,
+        loadCustomCommands, mcpCommand, initProjectCommand, rememberCommand, issueCommand,
+        bgCommand, tasksCommand, taskCommand, updateCheckCommand,
       } = await import('@frogger/core');
 
       const modelInfo = findModelInfo(provider, model ?? 'deepseek-chat');
@@ -58,7 +59,15 @@ export function useAgentServices(provider: string, model?: string) {
         registry.register(costCommand);
         registry.register(contextCommand);
         registry.register(doctorCommand);
+        registry.register(updateCheckCommand);
         registry.register(createRewindCommand(checkpointManagerRef.current!));
+        registry.register(mcpCommand);
+        registry.register(initProjectCommand);
+        registry.register(rememberCommand);
+        registry.register(issueCommand);
+        registry.register(bgCommand);
+        registry.register(tasksCommand);
+        registry.register(taskCommand);
         // Load custom commands from .frogger/commands/*.md
         const customCommands = loadCustomCommands(process.cwd());
         for (const cmd of customCommands) registry.register(cmd);

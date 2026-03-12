@@ -1,5 +1,12 @@
 import type { SlashCommand, SlashCommandContext, SlashCommandResult } from './types.js';
 
+/** Names reserved by built-in commands. Custom commands with these names trigger a warning. */
+export const BUILT_IN_COMMANDS = new Set([
+  'help', 'clear', 'compact', 'compact-threshold', 'model', 'setup',
+  'undo', 'sessions', 'resume', 'git-auth', 'rewind', 'remember',
+  'mcp', 'cost', 'init', 'update',
+]);
+
 export class CommandRegistry {
   private commands = new Map<string, SlashCommand>();
 

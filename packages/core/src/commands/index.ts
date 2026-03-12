@@ -1,4 +1,4 @@
-export { CommandRegistry } from './registry.js';
+export { CommandRegistry, BUILT_IN_COMMANDS } from './registry.js';
 export { clearCommand } from './clear.js';
 export { compactCommand } from './compact.js';
 export { compactThresholdCommand } from './compact-threshold.js';
@@ -9,5 +9,10 @@ export { sessionsCommand } from './sessions.js';
 export { resumeCommand } from './resume.js';
 export { gitAuthCommand } from './git-auth.js';
 export { createRewindCommand } from './rewind.js';
+export { rememberCommand } from './remember.js';
+export { issueCommand } from './issue.js';
+export { bgCommand } from './bg.js';
+export { tasksCommand, taskCommand } from './tasks.js';
 export { loadCustomCommands } from './custom-loader.js';
+export { updateCheckCommand, checkForUpdate, isNewerVersion, formatUpdateMessage, type UpdateCheckResult } from './update-check.js';
 export type { SlashCommand, SlashCommandContext, SlashCommandResult, BaseCommandContext, BudgetContext, ProviderContext, UsageContext } from './types.js';

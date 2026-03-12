@@ -1,5 +1,6 @@
 import { execa } from 'execa';
 import { loadConfig, findProvider } from '../config/config.js';
+import { checkForUpdate, formatUpdateMessage } from './update-check.js';
 import type { SlashCommand } from './types.js';
 
 async function getVersion(cmd: string, args: string[]): Promise<string | null> {
@@ -42,7 +43,24 @@ export const doctorCommand: SlashCommand = {
       detail: pnpmVersion ?? 'not found',
     });
 
-    // 4. API key
+    // 4. GitHub CLI
+    const ghVersion = await getVersion('gh', ['--version']);
+    let ghDetail = ghVersion ?? 'not found';
+    let ghOk = false;
+    if (ghVersion) {
+      const ghAuth = await execa('gh', ['auth', 'status'], { reject: false, timeout: 5000 });
+      ghOk = ghAuth.exitCode === 0;
+      ghDetail = ghOk
+        ? `${ghVersion.split('\n')[0]} (authenticated)`
+        : `${ghVersion.split('\n')[0]} (not authenticated)`;
+    }
+    checks.push({
+      label: 'GitHub CLI',
+      ok: ghOk,
+      detail: ghDetail,
+    });
+
+    // 5. API key
     const config = loadConfig();
     const hasKey = !!config.apiKey;
     const entry = findProvider(config.provider);
@@ -55,17 +73,41 @@ export const doctorCommand: SlashCommand = {
         : 'not configured',
     });
 
-    // 5. Provider / Model
+    // 6. Provider / Model
     checks.push({
       label: 'Provider',
       ok: true,
       detail: `${context.currentProvider} — ${context.currentModel}`,
     });
 
+    // 7. Update check (non-blocking)
+    let updateMsg = '';
+    try {
+      const updateResult = await checkForUpdate();
+      checks.push({
+        label: 'Updates',
+        ok: !updateResult.updateAvailable,
+        detail: updateResult.updateAvailable
+          ? `${updateResult.currentVersion} → ${updateResult.latestVersion} available`
+          : `up to date (${updateResult.currentVersion})`,
+      });
+      updateMsg = formatUpdateMessage(updateResult);
+    } catch {
+      checks.push({
+        label: 'Updates',
+        ok: true,
+        detail: 'could not check (offline?)',
+      });
+    }
+
     const lines = ['Environment Check:'];
     for (const c of checks) {
       const icon = c.ok ? '\u2713' : '\u2717';
       lines.push(`  ${icon} ${c.label.padEnd(12)} ${c.detail}`);
+    }
+
+    if (updateMsg) {
+      lines.push('', updateMsg);
     }
 
     return { type: 'message', message: lines.join('\n') };

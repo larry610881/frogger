@@ -1,6 +1,16 @@
 # Architecture Journal
 
 ## Table of Contents
+- [2026-03-12: v0.7.0 Test Coverage + Auto-Update Check](#2026-03-12-v070-test-coverage--auto-update-check)
+- [2026-03-12: v0.6.0 Stability & UX Sprint — Retry, MarkdownView, DiffView, Silent Catch, CI](#2026-03-12-v060-stability--ux-sprint--retry-markdownview-diffview-silent-catch-ci)
+- [2026-03-12: Session Resume Hint — 三層退出提示](#2026-03-12-session-resume-hint--三層退出提示)
+- [2026-03-12: v0.5.1 MODEL_PRICING 擴充 + /mcp /remember 測試補齊](#2026-03-12-v051-model_pricing-擴充--mcp-remember-測試補齊)
+- [2026-03-12: v0.5.0 MCP SSE/HTTP Transport + Background Tasks](#2026-03-12-v050-mcp-ssehttp-transport--background-tasks)
+- [2026-03-11: v0.4.0 Desktop 通知 + GitHub Issue → PR](#2026-03-11-v040-desktop-通知--github-issue--pr)
+- [2026-03-11: v0.3.1 Tech Debt Batch — O1-O15 全面清理（12 項）](#2026-03-11-v031-tech-debt-batch--o1-o15-全面清理12-項)
+- [2026-03-11: v0.3.0 Memory System + FROGGER.md Init + Web Search + Extended Thinking UI](#2026-03-11-v030-memory-system--froggermd-init--web-search--extended-thinking-ui)
+- [2026-03-11: v0.2.1 Rules System + Hooks System](#2026-03-11-v021-rules-system--hooks-system)
+- [2026-03-11: v0.2.0 Feature Batch — Extended Thinking, Prompt Caching, Test Runner, MCP stdio Transport](#2026-03-11-v020-feature-batch--extended-thinking-prompt-caching-test-runner-mcp-stdio-transport)
 - [2026-03-10: v0.1.9 Optimization Batch — Pipe Allow, Context Split, Permission Confirmation, Custom Commands, Repo Map](#2026-03-10-v019-optimization-batch--pipe-allow-context-split-permission-confirmation-custom-commands-repo-map)
 - [2026-03-09: Wave 1+2 Stability & Architecture — Permission Tests, Abort Fix, Session Cleanup, CI/CD, useAgent Split, Zod Validation, Benchmark Timeout, Image Input](#2026-03-09-wave-12-stability--architecture--permission-tests-abort-fix-session-cleanup-cicd-useagent-split-zod-validation-benchmark-timeout-image-input)
 - [2026-03-09: Phase 2 Batch — Security Fix, Pipe Mode, @file Reference, Checkpoint/Rewind](#2026-03-09-phase-2-batch--security-fix-pipe-mode-file-reference-checkpointrewind)
@@ -11,6 +21,251 @@
 - [2026-03-09: P1 Feature Batch — Permission, Git, Diff, Session, Markdown](#2026-03-09-p1-feature-batch--permission-git-diff-session-markdown)
 - [2026-03-08: Dynamic Provider Registry + Agent Benchmark](#2026-03-08-dynamic-provider-registry--agent-benchmark)
 <!-- New entries are inserted below -->
+
+---
+
+### 2026-03-12: v0.7.0 Test Coverage + Auto-Update Check
+
+**來源**: 測試覆蓋補齊 + Auto-update 檢查功能（#28）— 跨 core/cli packages
+
+**本次相關主題**: Integration Testing with Real Git Repos, npm Registry API, Semver Comparison, SlashCommand Extension
+
+#### 做得好的地方
+- **Git 工具整合測試使用真實 tmpDir repo**：git-status/diff/log/commit 測試在 `beforeEach` 建立真實 git 倉庫（`git init -b main` + config user），`afterEach` 清理。這比 mock `execa` 更能捕捉實際 git 行為（如 porcelain 格式、empty repo 的 log 錯誤）
+- **write-file 測試覆蓋安全邊界**：path traversal 測試（`../../etc/passwd`）驗證 `assertWithinBoundary` 防護生效、diff 輸出驗證（覆寫 vs 新建 vs 相同內容）、parent dir 自動建立
+- **diff-utils 純函式測試**：10 個 test case 覆蓋所有 edge case（空內容、新檔案、刪除檔案、相同內容、混合修改），零依賴零 mock
+- **Auto-update 與 /doctor 無縫整合**：`checkForUpdate()` 純函式設計，回傳結構化 `UpdateCheckResult`；doctor 命令中 catch 網路錯誤顯示 "could not check (offline?)" 而非報錯；`isNewerVersion()` 獨立提取為可測試的純函式
+- **55 個新測試案例**：git-core-tools（24）、write-file（7）、diff-utils（10）、update-check（14）— 全部通過
+
+#### 潛在隱憂
+- **Doctor 命令呼叫 `checkForUpdate()` 兩次** → 第一次用於 checks 列表，若偵測到更新又呼叫一次取得 `formatUpdateMessage`。應快取首次結果 → 優先級：低
+- **npm registry 查詢無快取** → 每次 `/doctor` 或 `/update` 都發 HTTP 請求。可加 5 分鐘 in-memory cache 避免同 session 重複查詢 → 優先級：低
+
+#### 延伸學習
+- **Integration vs Unit Testing for CLI Tools**：git tools 選擇 integration test（真實 git repo）而非 mock `execa`，因為 git 的行為細節（exit code、output format、error message）難以精確 mock。trade-off 是測試較慢（15s vs <1s），但可靠性更高。mock 適用於 API 呼叫（如 web-search、update-check），integration 適用於本地 CLI 工具
+- 若想深入：搜尋 "testing CLI tools with real filesystem" 或 "npm registry API documentation"
+
+---
+
+### 2026-03-12: v0.6.0 Stability & UX Sprint — Retry, MarkdownView, DiffView, Silent Catch, CI
+
+**來源**: v0.6.0 Sprint — 跨 core/cli 的穩定性 + UX 批次改善（17 檔案變更）
+
+**本次相關主題**: Retry with hasYielded Guard, Line-by-line Markdown Parser Extension, Hunk Header Parsing, Silent Catch Anti-pattern, Snapshot Testing
+
+#### 做得好的地方
+- **`hasYielded` 旗標的精妙設計**：Agent retry loop 的核心安全機制——只在「尚未發出任何事件」時才允許重試。一旦 UI 收到 partial data（text_delta、tool_call 等），重試會導致使用者看到重複或不一致的內容。這個 boolean flag 用最小代價解決了 generator-based stream retry 的核心難題
+- **MarkdownView 提取為獨立元件**：從 ChatView 的 private function 提升為 exported component，同時擴展 5 種新語法（blockquote、ordered list、table、link、strikethrough）。`renderInline` 的 regex 擴展向後相容——新增的 capture groups 不影響既有 `**bold**` 和 `` `code` `` 的匹配
+- **DiffView 行號的 hunk header 解析**：`parseHunkHeader()` 解析 `@@ -a,b +c,d @@` 格式，維護 `oldLine`/`newLine` 計數器。每種行類型（+/-/context）正確遞增對應計數器，多 hunk 場景下自動重置
+- **Silent catch 分層處理策略**：CLI 層（teardown 時 import 不穩定）使用 `console.error`，core 層使用 `logger.warn`。四處修改遵循同一模式：不改變控制流（仍然 catch），只增加可觀測性
+- **Mode config snapshot tests**：3 行 test code 就能偵測任何對 mode 配置的意外修改（allowedTools、approvalPolicy、systemPromptSuffix），防止 refactor 時的 silent regression
+
+#### 潛在隱憂
+- **Retry 與 Vercel AI SDK 的 `streamText` 內建 retry 可能重疊** → Vercel AI SDK 某些 provider adapter 內建了 HTTP retry 邏輯，疊加 agent-level retry 可能導致 429 被重試多次（最多 3×3=9 次）。建議觀察實際行為，必要時降低 `maxRetries` → 優先級：中
+- **TableView 的 column width 計算未考慮 inline formatting** → `cell.length` 計算包含 `**bold**` 的 markdown 語法字元，導致對齊時 bold 欄比實際顯示更寬。需要 strip markdown 後再計算寬度 → 優先級：低
+- **DiffView 行號在非標準 diff 格式下可能失準** → 如果 diff 輸出不含 hunk header（如 `git diff --no-headers`），`oldLine`/`newLine` 從 0 開始計數。目前的 tool 輸出都包含 hunk header，但需注意 edge case → 優先級：低
+
+#### 延伸學習
+- **Generator Retry Pattern**：在 `AsyncGenerator` 中加 retry 比普通 `Promise` 更複雜，因為 generator 是有狀態的——一旦 yield 了值，consumer 已經消費，無法「回溯」。`hasYielded` 是最簡單的守衛，更進階的做法是 buffering（先收集所有事件，確認無錯誤後再 yield），但這會犧牲串流的即時性。本次選擇即時串流 + 放棄 partial retry 是正確的 trade-off
+- **Snapshot Testing 的適用場景**：Snapshot test 最適合「結構穩定但內容豐富」的資料——如 mode config、CLI output、serialized state。不適合頻繁變動的資料（如 timestamp、random ID）。本次 mode config 是理想案例：結構很少變但一旦變動影響深遠
+- 若想深入：搜尋 "retry pattern async generator JavaScript" 或 "vitest snapshot testing best practices"
+
+---
+
+### 2026-03-12: Session Resume Hint — 三層退出提示
+
+**來源**: UX Enhancement — cli/src/app.tsx + cli/src/hooks/useAgent.ts + cli/src/session-state.ts
+
+**本次相關主題**: Module-level Singleton Bridge, Signal Handling, Ink Lifecycle
+
+#### 做得好的地方
+- **Module-level singleton 作為 React ↔ Host 橋樑**：`sessionState` 是純 JS 物件，不受 React state 非同步更新影響。`useAgent` 在 session save 成功後同步寫入，`app.tsx` 的 `waitUntilExit()` 和 signal handler 讀取——單向資料流清晰，無 race condition
+- **三層防護互補**：正常退出（`waitUntilExit`）→ 信號退出（SIGTERM/SIGHUP）→ 異常退出（下次啟動偵測 recent session），覆蓋所有場景；每層獨立運作，不互相依賴
+- **最小侵入性**：新功能僅新增 1 個小檔案（session-state.ts），修改 2 個既有檔案各 ~3 行，對既有架構零衝擊
+
+#### 潛在隱憂
+- **signal handler 中的 `process.exit(0)`** → 會跳過 Ink 的正常清理流程（`waitUntilExit` 不會觸發），但此時 Ink 可能已無法正常渲染。可接受的 trade-off → 優先級：低
+- **`formatTimeAgo` 在 app.tsx 內 inline** → 若未來其他檔案也需要類似功能，需提取到 shared utils。目前 single usage 不值得抽離 → 優先級：低
+
+#### 延伸學習
+- **Node.js Signal Handling**：SIGINT 由 Ink 內部處理（Ctrl+C），SIGTERM/SIGHUP 需手動攔截。SIGKILL 和 SIGSTOP 無法被任何 process 攔截，這是 OS 層面的硬性限制
+- 若想深入：搜尋 `Node.js process signal events` 和 `graceful shutdown patterns`
+
+---
+
+### 2026-03-12: v0.5.1 MODEL_PRICING 擴充 + /mcp /remember 測試補齊
+
+**來源**: Quick Wins + Stability — shared constants 擴充 + core commands 測試
+
+**本次相關主題**: Pricing Data Maintenance, Command Test Patterns
+
+#### 做得好的地方
+- **MODEL_PRICING 結構化分組**：以註解按 provider + generation 分組（Claude 4.6 → 4.5 → 4.1 → 4 legacy），方便未來維護時快速定位；alias model IDs（如 `claude-opus-4-5` 與 `claude-opus-4-5-20251101`）並列確保 `/cost` 對任何 model ID 都能正確計算
+- **/mcp 測試完整覆蓋**：6 個 test cases 覆蓋所有 code paths——空 config、stdio server、SSE/HTTP server、reconnect without manager、all connected、mixed results——使用 `vi.mock` 隔離 `loadMCPConfig` 檔案系統依賴
+- **/remember 測試精簡有效**：2 tests 驗證核心行為（空 args → usage、有 args → push message），不過度 mock
+
+#### 潛在隱憂
+- **Pricing 數據易過時** → 目前為 hardcoded constants，model 定價變更（如 Anthropic 調價）需手動更新程式碼。考慮未來從遠端 API 或 config 動態載入 → 優先級：低（目前 model 數量可控，手動維護足夠）
+
+#### 如果沒有明顯隱憂
+本次任務規模小（3 檔案變更 + 2 新測試檔），無重大架構隱憂。延伸思考：**pricing data 的 single source of truth** 問題——當 `MODEL_PRICING` 與 `providers.json` 中的 model list 不同步時，`/cost` 會回傳 `null`。可考慮在 `/doctor` 命令中加入 pricing coverage check，確保所有已註冊 model 都有對應定價。
+
+---
+
+### 2026-03-12: v0.5.0 MCP SSE/HTTP Transport + Background Tasks
+
+**來源**: Phase 4 (#22b, #23) — 跨 core/cli/shared 的雙功能開發
+
+**本次相關主題**: Discriminated Union Schema, Transport Factory, Background Task Lifecycle, AbortController Pattern
+
+#### 做得好的地方
+- **#22b Config Discriminated Union**：`z.union([sseSchema, httpSchema, stdioSchema])` 順序確保 Zod 按嚴格到鬆散的順序匹配（SSE/HTTP 有 `transport` literal，stdio 的 `transport` optional），保持向後相容——現有 stdio config 無需修改
+- **#22b Transport Factory SRP**：`transport-factory.ts` 抽離 transport 建立邏輯，`client.ts` 只依賴 generic `Transport` 介面。SSE/HTTP transport 用 dynamic `await import()` 避免 stdio-only 使用者載入不必要的依賴
+- **#22b Headers 環境變數解析**：`resolveEnvVars()` 提升為 exported function，同時處理 stdio `env` 和 SSE/HTTP `headers` 的 `${ENV_VAR}` 替換，保障 API token 不寫死在 config 中
+- **#23 BackgroundTaskManager 純粹的 Core 層設計**：Manager 在 core 層僅依賴 `BackgroundTaskRunner` interface（`{ run: (opts: { signal }) => Promise<void> }`），不直接依賴 agent 或 CLI——CLI 層提供 `createBackgroundAgent` factory，符合依賴反轉原則
+- **#23 AbortController 一致性**：每個 background task 持有獨立 `AbortController`，cancel 時 `abort()` → `streamText` 中斷 → catch 設 status `cancelled`，與主 agent 的 Ctrl+C 中斷模式一致
+
+#### 潛在隱憂
+- **SSE/HTTP reconnect 未驗證** → MCPClientManager 的 `reconnectAll()` 是為 stdio 設計的（斷線後重建 process），SSE/HTTP 的斷線語義不同（HTTP 本身是 stateless，SSE 需要 EventSource 重連）。需端對端測試驗證 → 優先級：中
+- **Background task 缺乏 result persistence** → 目前只有 in-memory 狀態（task info），app 退出後所有 background task 歷史消失。Plan 提到 `events.jsonl` persistence 但未實作 → 優先級：低（MVP 先 in-memory，有需求再加持久化）
+- **Background task 無 output 可見性** → 使用者只能看到 status（running/completed/failed），看不到 agent 的實際輸出。需要 event streaming 回 main agent 或 log to file → 優先級：中
+
+#### 延伸學習
+- **Discriminated Union vs Tagged Union**：Zod `z.union()` 依序嘗試匹配，`z.discriminatedUnion()` 用指定欄位直接跳轉。本次用 `z.union()` 因為 stdio 的 `transport` 是 optional——如果所有 transport 都有 `transport` 欄位，`z.discriminatedUnion('transport', [...])` 更高效
+- **Transport Pattern in MCP SDK**：MCP SDK 的 `Transport` 介面（`start()`, `send()`, `close()`）是典型的 Strategy Pattern，client 不關心底層是 stdio pipe、SSE stream 還是 HTTP request
+
+---
+
+### 2026-03-11: v0.4.0 Desktop 通知 + GitHub Issue → PR
+
+**來源**: Phase 4 (#26) + Phase 5 Quick Win (#38) — 跨 3 packages 的雙功能開發
+
+**本次相關主題**: BEL Character Notification, Graceful Dynamic Import, Slash Command → Agent Orchestration, gh CLI Integration Security
+
+#### 做得好的地方
+- **#38 零依賴通知架構**：BEL 字元（`\x07`）作為 universal fallback，`node-notifier` 透過 `try { await import() } catch {}` 實現 graceful degradation。不需新增任何 `dependencies`，安裝 `node-notifier` 是可選增強。這是 Progressive Enhancement 的教科書應用
+- **#38 通知邏輯完全在 CLI 層**：`notify.ts` 放在 `packages/cli/src/utils/`，core 保持 platform-agnostic。Config schema（`NotificationsConfig`）在 core 定義但通知行為在 CLI 實作，符合 HostProvider 抽象目標——未來 VSCode extension 可用 `vscode.window.showInformationMessage()` 替換
+- **#26 Hybrid 策略（/issue 命令 + gh-issue/gh-pr 工具）**：`/issue` 做 orchestration（驗證 gh auth → 讀取 issue → 推導分支名 → 注入結構化 message），`gh-issue` / `gh-pr` 作為獨立工具讓 agent 在後續流程中自主使用。這比純命令式（全部在 /issue 中完成）更靈活——agent 可在非 /issue 流程中也使用 gh 工具
+- **#26 安全分層**：`gh-issue` 為 `auto`（read-only），`gh-pr` 為 `confirm`（state-changing），與既有 git-status/git-push 的 permission 模式一致。`execa` 全部使用陣列參數形式，issue title 中的特殊字元（`$`、`"`、`` ` ``）不會觸發 shell injection
+- **分支名 slug 化**：`slugify()` 使用 `replace(/[^a-z0-9-]+/g, '-')` + `.slice(0, 40)` 限制長度，防止特殊字元和超長 title 導致的 git branch 名稱問題
+
+#### 潛在隱憂
+- **`node-notifier` 的 macOS/Linux 依賴**：`node-notifier` 在 macOS 使用 `terminal-notifier`，Linux 使用 `notify-send`，若系統未安裝這些工具，dynamic import 成功但通知靜默失敗（非 crash）。BEL fallback 確保基本功能，但使用者可能不知道為何沒看到桌面通知 → **優先級：低**
+- **`/issue` 命令的 `execa` 同步呼叫阻塞 UI**：`gh auth status` 和 `gh issue view` 在 slash command 中同步等待，若 GitHub API 慢（> 5 秒），使用者會感覺卡住。考慮未來加入 loading indicator → **優先級：低**
+- **`gh-pr` 工具的 `--label` 逗號連接**：`labels.join(',')` 傳給 `--label` flag，若 label 名稱本身包含逗號會被錯誤分割。gh CLI 的 `--label` 支援多次傳遞（`--label a --label b`），更安全但目前簡化為逗號格式 → **優先級：低**
+
+#### 延伸學習
+- **Progressive Enhancement in CLI Tools**：#38 的 BEL + node-notifier 是 Progressive Enhancement 在 CLI 領域的應用。核心體驗（BEL 聲音）零依賴，增強體驗（桌面通知）按需啟用。類似 Web 開發中的「先保證基本 HTML 可用，再逐步加入 CSS/JS 增強」
+- **Slash Command as Orchestrator**：#26 的 `/issue` 命令複用 `/remember` 的 pattern（push structured message to messagesRef），但更進一步——它先做環境驗證（gh auth）和資料獲取（issue view），再將結構化工作流程注入對話。這是「命令作為 agent 編排器」的模式，與 Claude Code 的 `/init` 類似
+- 若想深入：搜尋 "Progressive Enhancement principle" 或 "Orchestrator Pattern microservices"
+
+**思考題**：`/issue` 目前在命令執行時就驗證 `gh auth status`。如果使用者的 GitHub token 在長任務執行中過期（如 fine-grained PAT 設定了 1 小時過期），agent 在後續呼叫 `gh-pr` 時會失敗。該如何設計 token 有效性的 lazy verification 或自動 refresh 機制？考慮在 `gh-pr` tool 的 execute 中加入 auth 重試 vs. 在 `/issue` 開始時取得長效 token 的 trade-off。
+
+---
+
+### 2026-03-11: v0.3.1 Tech Debt Batch — O1-O15 全面清理（12 項）
+
+**來源**: v0.3.1 Tech Debt 清理 — 12 項優化，涵蓋安全、穩定性、UX、品質、打磨五個維度
+
+**本次相關主題**: SHA-256 Trust Verification, Factory Pattern, Cache Invalidation Strategy, Defensive Input Truncation, Cross-system Batch Refactoring
+
+#### 做得好的地方
+- **SHA-256 信任模式複用（O2）**：hooks 首次確認完全複用 `confirmed-permissions.ts` 的 `loadConfirmedHashes()` / `saveConfirmedHash()` pattern，API 一致（`isHooksConfirmed()` / `confirmHooks()`），使用者心智模型統一。專案級 hooks.json 和 permissions.json 的安全模型對齊，降低被惡意 repo 攻擊的風險
+- **三種快取策略各得其所（O8、O12）**：Rules 使用 file-set hash memoization（適合「檔案集合可能變更」的場景），Repo Map 使用 TTL-based cache（適合「短期內不變」的場景）。兩者都是 module-level cache，避免了 WeakRef 或 LRU 的過度工程
+- **Factory Pattern 向後相容（O14）**：`createLogger(level?)` factory 取代直接修改全域 state，但保留 `export const logger = createLogger()` 作為 default instance，所有 20+ 處 import 零修改。這是 Strangler Fig Pattern 的微型應用——逐步替換而非一次重寫
+- **Defensive Truncation 雙層防護（O1、O9）**：Memory 大小限制在 tool 層截斷（按 `---` 語意分隔符切割最舊條目），Hook result 在 executor 層截斷（按字元數硬截斷）。兩層獨立運作，即使一層失效另一層仍有防護
+- **12 項變更零迴歸**：所有變更都有配套的回歸測試（共 30+ 個新 test case），且所有既有測試通過。批次修改的風險透過「每項 TDD + 子系統分組」策略有效控制
+
+#### 潛在隱憂
+- **Rules memoization 的 hash 精確度**：`computeFileSetHash()` 使用 `path:size:mtime` 作為 hash 輸入，不讀檔案內容。理論上兩次修改 mtime 相同但內容不同的邊界情況不會偵測到（極罕見）。若需更高精確度可改為內容 hash，但效能代價更高 → **優先級：低**
+- **MCP reconnect 的並行安全**：`reconnectAll()` 對所有斷線 server 依序重連，若某個 server 重連耗時，後續 server 會被阻塞。考慮未來改為 `Promise.allSettled` 並行重連 → **優先級：低**
+- **`BUILT_IN_COMMANDS` set 需手動維護**：新增 built-in 命令時需同步更新 `BUILT_IN_COMMANDS`，遺漏則 collision 檢查失效。考慮未來從 `CommandRegistry.getAll()` 動態產生 → **優先級：低**
+
+#### 延伸學習
+- **Cache Invalidation 的三種策略**：本次實作展示了三種經典 cache invalidation 策略：(1) **TTL-based**（Repo Map 30s）——簡單但可能讀到過期資料；(2) **Content-hash-based**（Rules file set hash）——精確但有計算成本；(3) **Manual invalidation**（`clearRepoMapCache()` / `clearRulesCache()`）——測試和 edge case 的逃生口。生產系統通常混用多種策略，與本次做法一致
+- **Strangler Fig Pattern**：O14 的 logger factory 化是 Strangler Fig Pattern 的微型應用。Martin Fowler 描述此模式為：在舊系統旁邊建立新系統，逐步將流量導向新系統，最終移除舊系統。這裡的「新系統」是 `createLogger()`，「舊系統」是全域 `logger`，「流量」是各模組的 import。未來可逐步讓各模組改用 `createLogger()` 創建獨立 instance
+- 若想深入：搜尋 "cache invalidation strategies distributed systems" 或 "Strangler Fig application modernization"
+
+**思考題**：本次 12 項 tech debt 中有 3 項涉及快取（O8 Rules、O12 Repo Map、O1 Memory truncation）。如果 Frogger 未來支援 multi-agent 並行（Phase 4 O21），這些 module-level cache 會成為共享可變狀態。在 Node.js 的 `worker_threads` 或獨立 process 場景下，該如何設計跨 agent 的快取共享或隔離策略？
+
+---
+
+### 2026-03-11: v0.3.0 Memory System + FROGGER.md Init + Web Search + Extended Thinking UI
+
+**來源**: v0.3.0 功能開發 — 4 個獨立功能：Memory 持久化、專案初始化、Web 搜尋、思考 UI
+
+**本次相關主題**: Provider Pattern（SearchProvider）, Global Config Path Convention, Event Stream Extension, Parallel Agent Implementation
+
+#### 做得好的地方
+- **SearchProvider 抽象層設計**：`web-search.ts` 定義 `SearchProvider` 介面 + `TavilySearchProvider` 預設實作，未來替換為其他搜尋引擎（Brave、Google）只需新增 class。API key 缺失時回傳友善提示而非 throw，LLM 可理解並告知使用者
+- **Memory System 極簡設計**：`loadMemory()` 10 行、`save-memory` tool 20 行。全域路徑（`~/.frogger/memory/MEMORY.md`）不受 `workingDirectory` 約束，自然跨專案共享。`buildSystemPrompt()` 只新增一個 `memory?` 參數，零破壞
+- **Event Stream 可擴展性驗證**：新增 `thinking_delta` 事件只需：1) shared types 加一行 union member、2) agent.ts 加一個 switch case、3) CLI 端加狀態處理。三層分離（Agent→Event→CLI）讓每層變更獨立
+- **4 個功能完全並行開發**：透過 isolated worktree 讓 4 個 agent 各自在獨立環境中工作，共用檔案（index.ts、modes、useAgent.ts）的衝突在最終合併時統一解決
+- **`/init-project` 的防禦設計**：已存在 FROGGER.md 時拒絕覆蓋，排除 dotfiles 和 node_modules，截斷到 30 個項目——小決策防止大問題
+
+#### 潛在隱憂
+- **Memory 無大小限制** — `MEMORY.md` 持續 append 無截斷，長期使用後可能膨脹到影響 system prompt token 預算 → 建議加入 `MAX_MEMORY_SIZE` 常數 + 截斷警告 → 優先級：中
+- **Tavily API key 在 request body** — API key 以 `api_key` 欄位傳入 POST body 而非 Authorization header，符合 Tavily API 規格但不符一般最佳實踐 → Tavily API 限制，無需改動 → 優先級：低
+- **`reasoning-delta` vs `reasoning` 命名** — Vercel AI SDK 版本間可能改變 stream part 名稱（v5 用 `reasoning`、v6 用 `reasoning-delta`），需注意升級風險 → 建議在 SDK 版本升級時驗證 → 優先級：低
+
+#### 延伸學習
+- **Strategy Pattern + Provider 抽象**：`SearchProvider` 是典型 Strategy Pattern，與 ModeConfig 的 `allowedTools` 策略同源。可搜尋「Strategy Pattern vs Template Method」理解差異
+- **Event Sourcing in CLI**：`AgentEvent` 串流本質上是 Event Sourcing 的簡化版——每個事件代表狀態變更，UI 是 projection。未來若需 replay/debug 功能，此架構天然支持
+
+---
+
+### 2026-03-11: v0.2.1 Rules System + Hooks System
+
+**來源**: v0.2.1 功能開發 — Rules 注入 system prompt + PreToolUse/PostToolUse shell hooks
+
+**本次相關主題**: Config Loading Pattern, Hook/Interceptor Pattern, callWithHooks Refactor, Dynamic Import for Test Isolation
+
+#### 做得好的地方
+- **Rules 實作極簡且零破壞**：`loadRules()` 60 行，複用 `CONFIG_DIR` 常數和 `loadMdFiles()` 私有 helper（參考 `custom-loader.ts` 模式）。`buildSystemPrompt()` 只新增一個可選 `rules` 參數，所有既有測試零修改即通過
+- **Hooks Config 的 Zod 驗證 + 安全降級**：`HooksConfigSchema` 使用 `safeParse` + 預設空陣列，malformed JSON 或 schema 不匹配都安全降級為空 config，不影響 agent 啟動。與 MCP config 和 permissions.json 的處理模式一致
+- **callWithHooks helper 消除重複**：`registry.ts` 原有 6+ 處 `origExecute.call(t, args, opts)` 重複呼叫，每處都需手動處理 `onBeforeExecute`。抽取為 `callWithHooks()` 後統一處理 pre/post hooks + 錯誤攔截，降低遺漏風險
+- **PreToolUse 阻斷透過 throw + catch 實現**：`callWithHooks()` 在 `onBeforeExecute` 拋錯時攔截並回傳 error message 給 LLM，而非中斷整個 agent loop。LLM 收到錯誤訊息後可自行調整策略
+- **Hooks 動態 import 隔離**：與 MCP 相同模式，hooks 模組在 `createAgentTools()` 內動態 import，避免 `node:child_process` 干擾既有 agent-tools 測試
+
+#### 潛在隱憂
+- **Rules 不支援 hot-reload**：`loadRules()` 在每次 agent turn 開始時呼叫（因為 `buildSystemPrompt` 在 `submitInternal` 中重建），但如果使用者在 session 中修改 rules 檔案，新規則會在下一次 submit 時生效，非即時。目前可接受 → **優先級：低**
+- **Hooks 的 shell 命令安全性**：hooks.json 由使用者自行編寫，命令直接透過 `sh -c` 執行，沒有額外的沙箱隔離。這是設計如此（對標 Claude Code hooks），但專案級 hooks.json 可能被惡意 repo 植入。考慮未來加入類似 permissions.json 的首次確認機制 → **優先級：中**
+- **PostToolUse hook 拿到的 result 是完整字串**：大型工具輸出（如 `bash` 的長輸出）會完整傳入 `FROGGER_TOOL_RESULT` 環境變數，可能超過 shell 環境變數限制（Linux ~128KB）。考慮未來對 result 做截斷或改用 stdin 傳遞 → **優先級：低**
+
+#### 延伸學習
+- **Interceptor Pattern vs Event Pattern**：本次 hooks 採用 interceptor 模式（同步攔截 + 決定是否繼續），而非 event/observer 模式（非同步通知）。Interceptor 適用於「需要控制流的場景」（PreToolUse 可阻斷執行），event 適用於「純通知場景」（PostToolUse 失敗不影響結果）。Claude Code 也採用相同設計——PreToolUse 可 block，PostToolUse 只是 fire-and-forget
+- **若想深入**：搜尋「Chain of Responsibility Pattern」和「Middleware Pattern」（Express.js 的 `next()`），這些都是 interceptor 模式的變體
+
+---
+
+### 2026-03-11: v0.2.0 Feature Batch — Extended Thinking, Prompt Caching, Test Runner, MCP stdio Transport
+
+**來源**: v0.2.0 功能開發計畫 — 4 個功能批次實作
+
+**本次相關主題**: Provider-specific Options Pattern, Cache-aware Cost Model, Auto-detection Tool Design, External Tool Integration (MCP), Dynamic Import for Test Isolation
+
+#### 做得好的地方
+- **providerOptions 條件組建**：透過 `isAnthropic` flag 條件性注入 `thinking` + `cacheControl`，非 Anthropic provider 完全不受影響。JSON object 合併簡潔（`Object.keys(anthropicOptions).length > 0`），避免傳遞空 `providerOptions`
+- **Cache-aware 費用計算精確建模**：`calculateCost()` 精確反映 Anthropic 定價（cache read 10%、cache creation 125%、reasoning 按 output price）。純函式設計，向後相容——所有新參數都是 optional
+- **Test Runner 的偵測 → 建構 → 解析三段式**：`detectTestFramework()` / `buildTestCommand()` / `parseTestOutput()` 各自獨立可測試，符合 Single Responsibility。偵測順序（vitest → jest → pytest → cargo → go）按 Node.js 生態常見度排列
+- **MCP 動態 import 解決 test isolation**：將 `import('../mcp/index.js')` 從 top-level 改為 `createAgentTools()` 內的動態 import，避免 `@modelcontextprotocol/sdk` 的載入干擾既有 agent-tools 測試。`AgentToolsResult.mcpClientManager` 使用結構型別 `{ closeAll(): Promise<void> }` 而非具體 class import，進一步解耦
+- **MCP Config 合併策略清晰**：project config 覆蓋 global config（同名 server），`${ENV_VAR}` 解析在載入時完成，Zod v4 schema 驗證確保 config 結構正確
+- **test-runner 加入所有模式**：ask/plan/agent 三個模式都可用 test-runner（permission: auto），因為執行測試是唯讀操作，不修改程式碼
+
+#### 潛在隱憂
+- **providerMetadata 結構依賴 Vercel AI SDK 內部格式**：`part.providerMetadata?.anthropic?.reasoningTokens` 和 `cacheReadInputTokens` 的欄位名稱來自 SDK 內部，非公開 API。SDK 版本升級可能改變欄位名稱。建議未來加入 unit test mock 驗證 metadata 結構 → **優先級：中**
+- **MCP server 連線失敗不影響啟動但無重試**：`connect()` 失敗只 log warning 並跳過，不會重試。如果 MCP server 暫時不可用（如 npx 下載延遲），使用者需要重啟 frogger 才能載入。考慮未來加入 lazy reconnect 或 `/mcp reconnect` 命令 → **優先級：中**
+- **jsonSchemaToZod 簡化轉換**：僅支援 string/number/boolean/array/object 基本型別，不支援 `oneOf`、`allOf`、`enum`、`format` 等進階 JSON Schema 特性。對於複雜 MCP tool schema 可能丟失驗證資訊（退化為 `z.any()`）。考慮未來使用 `json-schema-to-zod` npm 套件 → **優先級：低**
+- **Test runner 的 JSON 輸出解析假設特定格式**：vitest `--reporter=json` 和 jest `--json` 的輸出格式可能隨版本變化。`parseTestOutput()` 有 text fallback 機制，但 JSON 解析失敗會退化為正規表達式匹配，準確度下降 → **優先級：低**
+- **Zod v4 的 `z.record()` 行為變更**：Zod v4 要求 `z.record(z.string(), valueSchema)` 明確指定 key type（v3 只需一個參數）。若未來升級 Zod 版本需注意此差異 → **優先級：低**
+
+#### 延伸學習
+- **Provider-specific Options 的封裝策略**：本次在 `agent.ts` 中直接條件組建 `providerOptions`，這是最簡單的做法。當支援更多 provider 特有功能時（如 OpenAI 的 `logprobs`、DeepSeek 的 `reasoning_content`），可考慮抽取為 `buildProviderOptions(provider, config)` 工廠函式，封裝各 provider 的差異。這與 Vercel AI SDK 的 provider adapter 模式互補——SDK 封裝了 API 呼叫差異，我們封裝了 options 構建差異
+- **外部工具整合的信任邊界**：MCP tools 預設 `confirm` permission 是正確的安全決策——外部 server 的工具可能執行任意副作用（檔案寫入、網路請求、程序執行）。這與 VS Code 的 extension trust 和 npm 的 `postinstall` 安全模型類似。下一步可考慮：(1) per-tool permission override in mcp.json；(2) sandbox 模式限制 MCP tool 的能力
+- **Auto-detection Pattern**：test-runner 的框架偵測是「Convention over Configuration」原則的應用——掃描已知的 config 檔案（vitest.config.ts → jest.config.js → pytest.ini）來推斷意圖。這與 package manager 偵測（lockfile → pnpm/yarn/npm）、CI 系統偵測（.github → GitHub Actions）是同一模式。關鍵設計決策：偵測優先序 + fallback 策略 + 可手動覆蓋
+- 若想深入：搜尋 "MCP Model Context Protocol specification" 或 "Convention over Configuration pattern"
+
+**思考題**：MCP 目前僅支援 stdio transport。如果要新增 SSE/HTTP transport（適用於遠端 MCP server），`MCPClientManager` 需要如何重構？考慮 Transport 作為 Strategy Pattern 注入 vs. 在 Manager 內部 switch 的 trade-off。同時，遠端 transport 帶來的新安全考量（TLS、認證、CORS）該如何融入現有的 permission 體系？
 
 ---
 
