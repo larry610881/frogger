@@ -11,11 +11,11 @@
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
   "scripts": {
-    "build": "tsup src/index.ts --format esm --dts",
+    "build": "tsup",
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
     "lint": "tsc --noEmit",
-    "dev": "tsup src/index.ts --format esm --dts --watch"
+    "dev": "tsup --watch"
   },
   "devDependencies": {
     "@types/node": "^25.3.5"

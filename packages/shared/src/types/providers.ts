@@ -6,6 +6,19 @@ export interface ModelInfo {
   maxOutputTokens: number;
 }
 
+export interface ProviderCapabilities {
+  vision: boolean;
+  thinking: boolean;
+  caching: boolean;
+  toolUse: boolean;
+}
+
+export const DEFAULT_CAPABILITIES: Record<ProviderType, ProviderCapabilities> = {
+  anthropic: { vision: true, thinking: true, caching: true, toolUse: true },
+  openai: { vision: true, thinking: false, caching: false, toolUse: true },
+  'openai-compatible': { vision: false, thinking: false, caching: false, toolUse: true },
+};
+
 export interface ProviderEntry {
   /** Unique identifier e.g. "deepseek" */
   name: string;
@@ -21,14 +34,19 @@ export interface ProviderEntry {
   models: ModelInfo[];
   /** Default model to use */
   defaultModel: string;
+  /** Per-provider capability overrides */
+  capabilities?: Partial<ProviderCapabilities>;
 }
 
-/** Provider types that support vision (image input) */
-export const VISION_PROVIDER_TYPES: readonly ProviderType[] = ['anthropic', 'openai'] as const;
+/** Resolve full capabilities for a provider entry, merging defaults with overrides */
+export function resolveCapabilities(entry: ProviderEntry): ProviderCapabilities {
+  const defaults = DEFAULT_CAPABILITIES[entry.type];
+  return { ...defaults, ...entry.capabilities };
+}
 
-/** Check if a provider type supports vision (image input) */
-export function supportsVision(providerType: ProviderType): boolean {
-  return (VISION_PROVIDER_TYPES as readonly string[]).includes(providerType);
+/** Check if a provider entry supports a specific capability */
+export function supportsCapability(entry: ProviderEntry, key: keyof ProviderCapabilities): boolean {
+  return resolveCapabilities(entry)[key];
 }
 
 export const DEFAULT_PROVIDERS: ProviderEntry[] = [

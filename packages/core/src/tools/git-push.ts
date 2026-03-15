@@ -8,6 +8,8 @@ export const gitPushMetadata: ToolMetadata = {
   name: 'git-push',
   description: 'Push commits to a remote repository',
   permissionLevel: 'confirm',
+  category: 'git',
+  hints: 'Push committed changes to remote. Confirm before force push.',
 };
 
 export function createGitPushTool(workingDirectory: string) {

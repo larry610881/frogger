@@ -100,4 +100,42 @@ describe('grep tool', () => {
       expect(result).toContain('Hello World');
     });
   });
+
+  describe('path boundary check', () => {
+    it('rejects path traversal via ../', async () => {
+      const result = await exec({ pattern: 'Hello', path: '../../' });
+      expect(result).toContain('Error');
+      expect(result).toContain('escapes');
+    });
+
+    it('rejects absolute path outside boundary', async () => {
+      const result = await exec({ pattern: 'Hello', path: '/etc' });
+      expect(result).toContain('Error');
+      expect(result).toContain('escapes');
+    });
+
+    it('allows path within working directory', async () => {
+      const result = await exec({ pattern: 'hello', path: 'sub' });
+      expect(result).toContain('deep hello');
+    });
+  });
+
+  describe('include pattern validation', () => {
+    it('rejects include with shell metacharacters', async () => {
+      const result = await exec({
+        pattern: 'Hello',
+        include: '*.ts;rm -rf /',
+      });
+      expect(result).toContain('Error');
+      expect(result).toContain('unsafe');
+    });
+
+    it('allows safe include glob patterns', async () => {
+      const result = await exec({
+        pattern: 'Hello',
+        include: '*.ts',
+      });
+      expect(result).toContain('Hello World');
+    });
+  });
 });

@@ -10,6 +10,8 @@ export const saveMemoryMetadata: ToolMetadata = {
   name: 'save-memory',
   description: 'Save a memory note to persistent storage. Use this to remember important context across sessions.',
   permissionLevel: 'confirm',
+  category: 'system',
+  hints: 'Persist important decisions and preferences across sessions.',
 };
 
 export function createSaveMemoryTool() {

@@ -10,6 +10,8 @@ export const bashMetadata: ToolMetadata = {
   name: 'bash',
   description: 'Execute a shell command',
   permissionLevel: 'confirm',
+  category: 'system',
+  hints: 'Prefer dedicated tools (test-runner, git-*) when available.',
 };
 
 const BLOCKED_PATTERNS = [
@@ -81,7 +83,7 @@ export function createBashTool(workingDirectory: string) {
           .join('\n');
 
         if (result.exitCode !== 0) {
-          return truncateOutput(`Exit code ${result.exitCode}\n${output}`);
+          return truncateOutput(`Exit code ${result.exitCode}\n${output}\nHint: Analyze the error output above and fix the code, then re-run.`);
         }
 
         return truncateOutput(output) || '(no output)';

@@ -98,6 +98,24 @@ describe('MCPClientManager', () => {
       await manager.connect('test-server', mockConfig);
       expect(mockConnect).toHaveBeenCalledTimes(1);
     });
+
+    it('times out if server connection hangs', async () => {
+      vi.useFakeTimers();
+      // Mock connect that never resolves
+      mockConnect.mockReturnValue(new Promise(() => {}));
+
+      const manager = new MCPClientManager({ maxRetries: 0, delayFn: () => Promise.resolve() });
+      // Capture the rejection eagerly to avoid unhandled rejection
+      const promise = manager.connect('hanging-server', mockConfig).catch((e: Error) => e);
+
+      // Advance past the 30s timeout and flush microtasks
+      await vi.advanceTimersByTimeAsync(30_000);
+
+      const error = await promise;
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toMatch(/connection timed out/);
+      vi.useRealTimers();
+    });
   });
 
   describe('connect with SSE config', () => {

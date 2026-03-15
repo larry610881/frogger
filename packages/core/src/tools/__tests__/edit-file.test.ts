@@ -116,4 +116,18 @@ describe('edit-file tool', () => {
     expect(result).toContain('Error:');
     expect(result).toContain('escapes');
   });
+
+  it('shows hint to re-read file when no match found', async () => {
+    await fs.writeFile(
+      path.join(tmpDir, 'nomatch.ts'),
+      'hello world\n',
+    );
+    const t = createEditFileTool(tmpDir);
+    const result = await t.execute!(
+      { path: 'nomatch.ts', old_text: 'completely different text that will never match anything here at all xyz', new_text: 'replacement' },
+      { toolCallId: '1', messages: [] },
+    );
+    expect(result).toContain('Error: Could not find a match');
+    expect(result).toContain('Hint: Re-read the file to see current content, then retry with exact match.');
+  });
 });

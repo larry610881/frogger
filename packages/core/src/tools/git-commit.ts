@@ -2,11 +2,14 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { execa } from 'execa';
 import type { ToolMetadata } from '@frogger/shared';
+import { assertWithinBoundary } from './security.js';
 
 export const gitCommitMetadata: ToolMetadata = {
   name: 'git-commit',
   description: 'Stage files and create a git commit',
   permissionLevel: 'confirm',
+  category: 'git',
+  hints: 'Stage specific files, write clear commit messages.',
 };
 
 export function createGitCommitTool(workingDirectory: string) {
@@ -18,6 +21,13 @@ export function createGitCommitTool(workingDirectory: string) {
     }),
     execute: async ({ message, files }) => {
       try {
+        // Validate file paths are within working directory
+        if (files && files.length > 0) {
+          for (const file of files) {
+            assertWithinBoundary(file, workingDirectory);
+          }
+        }
+
         // Stage files
         const addArgs = files && files.length > 0
           ? ['add', ...files]

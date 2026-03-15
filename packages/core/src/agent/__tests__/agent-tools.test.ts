@@ -7,6 +7,7 @@ const {
   const mockGetToolsWithPermission = vi.fn().mockReturnValue({ 'read-file': {} });
   const mockCreateToolRegistry = vi.fn().mockReturnValue({
     getToolsWithPermission: mockGetToolsWithPermission,
+    getToolHints: vi.fn().mockReturnValue(''),
   });
   const mockDetectGitRepo = vi.fn().mockResolvedValue(true);
   const mockCreateCheckpoint = vi.fn().mockResolvedValue(null);
@@ -57,6 +58,7 @@ describe('createAgentTools', () => {
     mockGetToolsWithPermission.mockReturnValue({ 'read-file': {} });
     mockCreateToolRegistry.mockReturnValue({
       getToolsWithPermission: mockGetToolsWithPermission,
+      getToolHints: vi.fn().mockReturnValue(''),
     });
     mockDetectGitRepo.mockResolvedValue(true);
     mockCreateCheckpoint.mockResolvedValue(null);

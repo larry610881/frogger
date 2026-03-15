@@ -21,10 +21,11 @@ describe('bash tool', () => {
     expect(result).toBe('hello');
   });
 
-  it('returns exit code on failure', async () => {
+  it('returns exit code on failure with hint', async () => {
     const t = createBashTool(tmpDir);
     const result = await t.execute!({ command: 'exit 42' }, { toolCallId: '1', messages: [] });
     expect(result).toContain('Exit code 42');
+    expect(result).toContain('Hint: Analyze the error output above and fix the code, then re-run.');
   });
 
   it('respects cwd option', async () => {

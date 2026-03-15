@@ -96,4 +96,14 @@ describe('read-file tool', () => {
       'line1\nline2\nline3\nline4\nline5\nline6\nline7\nline8\nline9\nline10',
     );
   });
+
+  it('shows hint to use glob on ENOENT', async () => {
+    const t = createReadFileTool(tmpDir);
+    const result = await t.execute!(
+      { path: 'does-not-exist.txt' },
+      { toolCallId: '1', messages: [] },
+    );
+    expect(result).toContain('Error:');
+    expect(result).toContain('Hint: Use glob to search for files matching this name pattern.');
+  });
 });

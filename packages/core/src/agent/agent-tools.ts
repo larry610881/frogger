@@ -28,6 +28,8 @@ export interface AgentToolsResult {
   checkpointManager: CheckpointManager | null;
   /** MCP client manager — call closeAll() on exit */
   mcpClientManager: { closeAll(): Promise<void> } | null;
+  /** Categorized tool usage hints for the system prompt */
+  toolHints: string;
 }
 
 /**
@@ -174,5 +176,7 @@ export async function createAgentTools(
     logger.warn(`MCP initialization failed: ${err instanceof Error ? err.message : String(err)}`);
   }
 
-  return { tools, checkpointManager, mcpClientManager };
+  const toolHints = registry.getToolHints();
+
+  return { tools, checkpointManager, mcpClientManager, toolHints };
 }

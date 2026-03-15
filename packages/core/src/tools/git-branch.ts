@@ -7,6 +7,8 @@ export const gitBranchMetadata: ToolMetadata = {
   name: 'git-branch',
   description: 'Manage git branches (list, create, switch, delete)',
   permissionLevel: 'confirm',
+  category: 'git',
+  hints: 'Manage branches. Check current branch before switching.',
 };
 
 export function createGitBranchTool(workingDirectory: string) {

@@ -7,6 +7,8 @@ export const ghPrMetadata: ToolMetadata = {
   name: 'gh-pr',
   description: 'Create a GitHub pull request',
   permissionLevel: 'confirm',
+  category: 'github',
+  hints: 'Create pull requests with summary and test plan.',
 };
 
 export function createGhPrTool(workingDirectory: string) {

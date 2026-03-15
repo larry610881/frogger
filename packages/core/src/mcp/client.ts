@@ -23,6 +23,17 @@ export interface ReconnectResult {
 
 const DEFAULT_MAX_RETRIES = 3;
 const BASE_DELAY_MS = 1000;
+const CONNECTION_TIMEOUT_MS = 30_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value); },
+      (err) => { clearTimeout(timer); reject(err); },
+    );
+  });
+}
 
 function defaultDelay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,7 +84,11 @@ export class MCPClientManager {
           { capabilities: {} },
         );
 
-        await client.connect(transport);
+        await withTimeout(
+          client.connect(transport),
+          CONNECTION_TIMEOUT_MS,
+          `MCP server "${name}" connection timed out after ${CONNECTION_TIMEOUT_MS}ms`,
+        );
         this.clients.set(name, client);
         this.transports.set(name, transport);
         logger.debug(`MCP server "${name}" connected via ${transportType}`);

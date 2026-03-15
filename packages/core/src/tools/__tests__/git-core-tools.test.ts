@@ -297,4 +297,37 @@ describe('git-commit tool', () => {
     const result = await t.execute!({ message: 'test', files: ['nonexistent.txt'] }, toolCtx);
     expect(result).toContain('Error');
   });
+
+  describe('files boundary check', () => {
+    it('rejects files with path traversal', async () => {
+      const t = createGitCommitTool(tmpDir);
+      const result = await t.execute!(
+        { message: 'evil', files: ['../../etc/passwd'] },
+        toolCtx,
+      );
+      expect(result).toContain('Error');
+      expect(result).toContain('escapes');
+    });
+
+    it('rejects absolute file paths outside boundary', async () => {
+      const t = createGitCommitTool(tmpDir);
+      const result = await t.execute!(
+        { message: 'evil', files: ['/etc/passwd'] },
+        toolCtx,
+      );
+      expect(result).toContain('Error');
+      expect(result).toContain('escapes');
+    });
+
+    it('rejects if any file in array escapes boundary', async () => {
+      await fs.writeFile(path.join(tmpDir, 'legit.txt'), 'ok');
+      const t = createGitCommitTool(tmpDir);
+      const result = await t.execute!(
+        { message: 'mixed', files: ['legit.txt', '../../secret'] },
+        toolCtx,
+      );
+      expect(result).toContain('Error');
+      expect(result).toContain('escapes');
+    });
+  });
 });

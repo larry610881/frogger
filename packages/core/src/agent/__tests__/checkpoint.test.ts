@@ -183,6 +183,108 @@ describe('CheckpointManager', () => {
     expect(checkpoints[checkpoints.length - 1]!.id).toBe(3);
   });
 
+  it('creates checkpoint for edit-file tool', async () => {
+    const filePath = 'edit-target.txt';
+    await fs.writeFile(path.join(tmpDir, filePath), 'before edit', 'utf-8');
+
+    const manager = new CheckpointManager({ workingDirectory: tmpDir, isGitRepo: false });
+
+    const checkpoint = await manager.createCheckpoint(
+      'edit-file',
+      { path: filePath, search: 'before', replace: 'after' },
+      0,
+    );
+
+    expect(checkpoint).not.toBeNull();
+    expect(checkpoint!.toolName).toBe('edit-file');
+    expect(checkpoint!.fileSnapshots).toHaveLength(1);
+    expect(checkpoint!.fileSnapshots[0]!.path).toBe(filePath);
+    expect(checkpoint!.fileSnapshots[0]!.content).toBe('before edit');
+  });
+
+  it('creates checkpoint for bash tool in non-git repo (empty fileSnapshots)', async () => {
+    const manager = new CheckpointManager({ workingDirectory: tmpDir, isGitRepo: false });
+
+    const checkpoint = await manager.createCheckpoint(
+      'bash',
+      { command: 'echo hello' },
+      0,
+    );
+
+    expect(checkpoint).not.toBeNull();
+    expect(checkpoint!.toolName).toBe('bash');
+    // bash in non-git repo doesn't snapshot dirty files
+    expect(checkpoint!.fileSnapshots).toHaveLength(0);
+  });
+
+  it('creates checkpoint for git-commit tool', async () => {
+    const manager = new CheckpointManager({ workingDirectory: tmpDir, isGitRepo: false });
+
+    const checkpoint = await manager.createCheckpoint(
+      'git-commit',
+      { message: 'test commit' },
+      0,
+    );
+
+    expect(checkpoint).not.toBeNull();
+    expect(checkpoint!.toolName).toBe('git-commit');
+    // git-commit: no file snapshots, just gitHead (which is undefined for non-git)
+    expect(checkpoint!.fileSnapshots).toHaveLength(0);
+  });
+
+  it('snapshots new file as null content for write-file on non-existent file', async () => {
+    const manager = new CheckpointManager({ workingDirectory: tmpDir, isGitRepo: false });
+
+    const checkpoint = await manager.createCheckpoint(
+      'write-file',
+      { path: 'brand-new-file.txt' },
+      0,
+    );
+
+    expect(checkpoint).not.toBeNull();
+    expect(checkpoint!.fileSnapshots).toHaveLength(1);
+    expect(checkpoint!.fileSnapshots[0]!.content).toBeNull();
+    expect(checkpoint!.createdFiles).toContain('brand-new-file.txt');
+  });
+
+  it('skips files larger than MAX_FILE_SIZE (1MB)', async () => {
+    const filePath = 'large-file.txt';
+    // Create a file > 1MB
+    const largeContent = 'x'.repeat(1_000_001);
+    await fs.writeFile(path.join(tmpDir, filePath), largeContent, 'utf-8');
+
+    const manager = new CheckpointManager({ workingDirectory: tmpDir, isGitRepo: false });
+
+    const checkpoint = await manager.createCheckpoint(
+      'write-file',
+      { path: filePath },
+      0,
+    );
+
+    expect(checkpoint).not.toBeNull();
+    // Large file should be skipped — no snapshot captured
+    expect(checkpoint!.fileSnapshots).toHaveLength(0);
+  });
+
+  it('getCheckpoint returns specific checkpoint by id', async () => {
+    const manager = new CheckpointManager({ workingDirectory: tmpDir, isGitRepo: false });
+
+    await manager.createCheckpoint('bash', { command: 'echo 1' }, 0);
+    await manager.createCheckpoint('bash', { command: 'echo 2' }, 1);
+    const cp3 = await manager.createCheckpoint('bash', { command: 'echo 3' }, 2);
+
+    const found = manager.getCheckpoint(cp3!.id);
+    expect(found).toBeDefined();
+    expect(found!.id).toBe(cp3!.id);
+    expect(found!.toolArgs).toEqual({ command: 'echo 3' });
+  });
+
+  it('getCheckpoint returns undefined for non-existent id', () => {
+    const manager = new CheckpointManager({ workingDirectory: tmpDir, isGitRepo: false });
+
+    expect(manager.getCheckpoint(999)).toBeUndefined();
+  });
+
   it('resets totalSnapshotBytes on clear()', async () => {
     const manager = new CheckpointManager({
       workingDirectory: tmpDir,

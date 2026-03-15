@@ -1,5 +1,6 @@
 import { execa } from 'execa';
 import { loadConfig, findProvider } from '../config/config.js';
+import { resolveCapabilities } from '@frogger/shared';
 import { checkForUpdate, formatUpdateMessage } from './update-check.js';
 import type { SlashCommand } from './types.js';
 
@@ -80,7 +81,23 @@ export const doctorCommand: SlashCommand = {
       detail: `${context.currentProvider} — ${context.currentModel}`,
     });
 
-    // 7. Update check (non-blocking)
+    // 7. Capabilities
+    if (entry) {
+      const caps = resolveCapabilities(entry);
+      const capList = [
+        `vision ${caps.vision ? '\u2713' : '\u2717'}`,
+        `thinking ${caps.thinking ? '\u2713' : '\u2717'}`,
+        `caching ${caps.caching ? '\u2713' : '\u2717'}`,
+        `tool-use ${caps.toolUse ? '\u2713' : '\u2717'}`,
+      ];
+      checks.push({
+        label: 'Capabilities',
+        ok: true,
+        detail: capList.join('  '),
+      });
+    }
+
+    // 8. Update check (non-blocking)
     let updateMsg = '';
     try {
       const updateResult = await checkForUpdate();

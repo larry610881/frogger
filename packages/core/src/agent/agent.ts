@@ -1,7 +1,7 @@
 import { streamText, stepCountIs, type ModelMessage } from 'ai';
 import type { JSONValue } from '@ai-sdk/provider';
-import type { AgentEvent, TokenUsage } from '@frogger/shared';
-import { MAX_STEPS } from '@frogger/shared';
+import type { AgentEvent, TokenUsage, ProviderCapabilities } from '@frogger/shared';
+import { MAX_STEPS, COMPACT_PRESERVE_RECENT, DEFAULT_CONTEXT_WINDOW } from '@frogger/shared';
 import { logger } from '../utils/logger.js';
 import { isRetryableError, calculateDelay, sleep, DEFAULT_RETRY_OPTIONS } from './retry.js';
 
@@ -20,8 +20,28 @@ export interface RunAgentOptions {
   thinking?: ThinkingConfig;
   /** Provider type hint for enabling provider-specific features (e.g. caching) */
   providerType?: string;
+  /** Resolved provider capabilities — preferred over providerType for feature detection */
+  capabilities?: ProviderCapabilities;
   /** Maximum number of retries for transient API errors (default: 3) */
   maxRetries?: number;
+}
+
+function enforceHardLimit(messages: ModelMessage[], maxTokenEstimate: number): ModelMessage[] {
+  const estimateTokens = (msgs: ModelMessage[]) =>
+    msgs.reduce((sum, m) => sum + JSON.stringify(m).length / 4, 0);
+
+  if (estimateTokens(messages) <= maxTokenEstimate) return messages;
+
+  const preserve = COMPACT_PRESERVE_RECENT; // 4
+  if (messages.length <= preserve) return messages;
+
+  // Keep first message (system context) + last N messages
+  const first = messages[0];
+  const recent = messages.slice(-preserve);
+  const trimmed = [first, ...recent];
+
+  logger.warn(`Hard limit: truncated ${messages.length} → ${trimmed.length} messages`);
+  return trimmed;
 }
 
 export async function* runAgent(
@@ -36,20 +56,24 @@ export async function* runAgent(
     abortSignal,
     thinking,
     providerType,
+    capabilities,
     maxRetries = DEFAULT_RETRY_OPTIONS.maxRetries,
   } = options;
 
   logger.debug(`Agent loop starting — maxSteps=${maxSteps}, messages=${messages.length}`);
 
+  // Derive capabilities — prefer explicit, fall back to providerType heuristic
+  const supportsThinking = capabilities?.thinking ?? (providerType === 'anthropic');
+  const supportsCaching = capabilities?.caching ?? (providerType === 'anthropic');
+
   // Build provider-specific options (thinking + caching)
-  const isAnthropic = providerType === 'anthropic';
   const anthropicOptions: Record<string, JSONValue> = {};
 
-  if (thinking?.enabled && isAnthropic) {
+  if (thinking?.enabled && supportsThinking) {
     anthropicOptions.thinking = { type: 'enabled', budgetTokens: thinking.budgetTokens };
   }
 
-  if (isAnthropic) {
+  if (supportsCaching) {
     anthropicOptions.cacheControl = { type: 'ephemeral' };
   }
 
@@ -58,6 +82,7 @@ export async function* runAgent(
     : undefined;
 
   const maxAttempts = maxRetries + 1; // total attempts = retries + initial
+  const safeMsgs = enforceHardLimit(messages, DEFAULT_CONTEXT_WINDOW * 0.9);
 
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     let hasYielded = false;
@@ -66,7 +91,7 @@ export async function* runAgent(
       const result = streamText({
         model,
         system: systemPrompt,
-        messages,
+        messages: safeMsgs,
         tools,
         stopWhen: stepCountIs(maxSteps),
         abortSignal,

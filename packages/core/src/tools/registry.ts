@@ -171,6 +171,20 @@ export class ToolRegistry {
             return callWithHooks(origExecute, t, name, args, opts, onBeforeExecute, onAfterExecute);
           }
 
+          if (response === 'deny-project') {
+            if (workingDirectory) {
+              const rule = buildPermissionRule(name, args);
+              savePermissionRule(getProjectPermissionsPath(workingDirectory), 'deny', rule);
+            }
+            return 'Tool execution denied by user (saved to project rules).';
+          }
+
+          if (response === 'deny-global') {
+            const rule = buildPermissionRule(name, args);
+            savePermissionRule(getGlobalPermissionsPath(), 'deny', rule);
+            return 'Tool execution denied by user (saved to global rules).';
+          }
+
           return 'Tool execution denied by user.';
         },
       } as unknown as Tool;
@@ -185,5 +199,33 @@ export class ToolRegistry {
 
   getAllMetadata(): ToolMetadata[] {
     return Array.from(this.metadata.values());
+  }
+
+  /** Generate categorized tool usage hints for the system prompt */
+  getToolHints(): string {
+    const categorized = new Map<string, Array<{ name: string; hints: string }>>();
+
+    for (const [, meta] of this.metadata) {
+      if (!meta.hints || !meta.category) continue;
+      const cat = meta.category;
+      if (!categorized.has(cat)) categorized.set(cat, []);
+      categorized.get(cat)!.push({ name: meta.name, hints: meta.hints });
+    }
+
+    const categoryOrder = ['read', 'write', 'search', 'git', 'test', 'github', 'system'];
+    const categoryLabels: Record<string, string> = {
+      read: 'Reading', write: 'Writing', search: 'Search',
+      git: 'Git', test: 'Testing', github: 'GitHub', system: 'System',
+    };
+
+    const sections: string[] = [];
+    for (const cat of categoryOrder) {
+      const tools = categorized.get(cat);
+      if (!tools?.length) continue;
+      const items = tools.map(t => `- **${t.name}**: ${t.hints}`).join('\n');
+      sections.push(`### ${categoryLabels[cat] || cat}\n${items}`);
+    }
+
+    return sections.length ? `## Tool Usage Guide\n\n${sections.join('\n\n')}` : '';
   }
 }

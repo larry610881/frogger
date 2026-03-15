@@ -21,14 +21,37 @@ vi.mock('@frogger/core', () => {
       apiKey: 'test-key',
     }),
     createModel: vi.fn().mockReturnValue({}),
-    createAgentTools: vi.fn().mockResolvedValue({ tools: {}, checkpointManager: null }),
+    createAgentTools: vi.fn().mockResolvedValue({ tools: {}, checkpointManager: null, mcpClientManager: null, toolHints: '' }),
+    detectProjectInfo: vi.fn().mockResolvedValue({ languages: [], isMonorepo: false, isGitRepo: false }),
+    formatProjectInfo: vi.fn().mockReturnValue(''),
     ModeManager: MockModeManager,
     loadProjectContext: vi.fn().mockResolvedValue(undefined),
     buildSystemPrompt: vi.fn().mockReturnValue('system prompt'),
     generateRepoMap: vi.fn().mockResolvedValue(undefined),
     loadRules: vi.fn().mockReturnValue(undefined),
     loadMemory: vi.fn().mockReturnValue(undefined),
+    findProvider: vi.fn().mockReturnValue({
+      name: 'anthropic',
+      label: 'Anthropic (Claude)',
+      type: 'anthropic',
+      envKey: 'ANTHROPIC_API_KEY',
+      models: [],
+      defaultModel: 'claude-sonnet-4-20250514',
+    }),
     runAgent: vi.fn(),
+  };
+});
+
+vi.mock('@frogger/shared', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@frogger/shared')>();
+  return {
+    ...actual,
+    resolveCapabilities: vi.fn().mockReturnValue({
+      vision: true,
+      thinking: true,
+      caching: true,
+      toolUse: true,
+    }),
   };
 });
 
@@ -167,6 +190,33 @@ describe('runPipeMode', () => {
         allowedTools: ['read-file'],
       }),
     );
+  });
+
+  it('handles backpressure when stdout returns false', async () => {
+    const events: AgentEvent[] = [
+      { type: 'text_delta', textDelta: 'Hello' },
+      { type: 'done', usage: { promptTokens: 10, completionTokens: 5, totalTokens: 15 } },
+    ];
+    vi.mocked(runAgent).mockReturnValue(fakeAgentStream(events));
+
+    // Mock stdout.write to return false (backpressure), then emit drain
+    stdoutSpy.mockRestore();
+    stdoutSpy = vi.spyOn(process.stdout, 'write').mockImplementation((_data: unknown, cbOrEncoding?: unknown, cb?: unknown) => {
+      // Emit drain on next tick to unblock
+      process.nextTick(() => process.stdout.emit('drain'));
+      // Resolve callback if provided
+      const callback = typeof cbOrEncoding === 'function' ? cbOrEncoding : cb;
+      if (typeof callback === 'function') (callback as () => void)();
+      return false; // signal backpressure
+    });
+
+    await runPipeMode(baseOptions);
+
+    // Should still have written both events despite backpressure
+    const lines = stdoutSpy.mock.calls.map((call: unknown[]) => JSON.parse(call[0] as string));
+    expect(lines).toHaveLength(2);
+    expect(lines[0]).toEqual({ type: 'text_delta', text: 'Hello' });
+    expect(lines[1].type).toBe('done');
   });
 
   it('skips usage_update events', async () => {

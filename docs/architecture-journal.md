@@ -1,6 +1,10 @@
 # Architecture Journal
 
 ## Table of Contents
+- [2026-03-15: v0.11.0 SWE-bench Competitiveness + System Stability Sprint](#2026-03-15-v0110-swe-bench-competitiveness--system-stability-sprint)
+- [2026-03-13: Permission System Enhancement — System Prompt Safety + Always-Deny + Policy Override](#2026-03-13-permission-system-enhancement--system-prompt-safety--always-deny--policy-override)
+- [2026-03-13: v0.9.0 穩定性優先 — 測試覆蓋 + Deprecated 清理 + Flaky 修復](#2026-03-13-v090-穩定性優先--測試覆蓋--deprecated-清理--flaky-修復)
+- [2026-03-13: v0.8.0 Provider Capabilities + Tool Hints + Project Detection + System Prompt Rewrite](#2026-03-13-v080-provider-capabilities--tool-hints--project-detection--system-prompt-rewrite)
 - [2026-03-12: v0.7.0 Test Coverage + Auto-Update Check](#2026-03-12-v070-test-coverage--auto-update-check)
 - [2026-03-12: v0.6.0 Stability & UX Sprint — Retry, MarkdownView, DiffView, Silent Catch, CI](#2026-03-12-v060-stability--ux-sprint--retry-markdownview-diffview-silent-catch-ci)
 - [2026-03-12: Session Resume Hint — 三層退出提示](#2026-03-12-session-resume-hint--三層退出提示)
@@ -21,6 +25,106 @@
 - [2026-03-09: P1 Feature Batch — Permission, Git, Diff, Session, Markdown](#2026-03-09-p1-feature-batch--permission-git-diff-session-markdown)
 - [2026-03-08: Dynamic Provider Registry + Agent Benchmark](#2026-03-08-dynamic-provider-registry--agent-benchmark)
 <!-- New entries are inserted below -->
+
+---
+
+### 2026-03-15: v0.11.0 SWE-bench Competitiveness + System Stability Sprint
+
+**來源**: SWE-bench 競爭力提升計畫（B1-B5 穩定性修復 + S1-S5 能力強化 + S8 評估框架）
+
+**本次相關主題**: Agent Team 並行開發、Tool Error Recovery、Atomic File Operations、SWE-bench Evaluation
+
+#### 做得好的地方
+
+- **Agent Team 並行架構設計良好** — 4 個 agent 並行開發，透過檔案衝突分析確保無衝突。唯一共享檔案 `modes/agent.ts` 明確分割職責（Agent C 改 allowedTools、Agent D 改 systemPromptSuffix），成功避免 merge conflict
+- **Error Recovery Hints 提升 LLM 自主修復能力** — edit-file/read-file/bash 的錯誤回應包含 actionable hints，引導 LLM 下一步動作（re-read → retry、glob search、analyze error），預期可減少 SWE-bench 上因工具錯誤導致的失敗循環
+- **Atomic Write 防護** — write-file 改用 tmp + rename 模式，防止中途 crash 損毀檔案。長時間 SWE-bench 任務中 agent 可能被 timeout kill，atomic write 確保不留下半寫入的檔案
+- **MCP Timeout** — 30 秒連線 timeout 防止 MCP server 掛起凍結 agent，SWE-bench 場景中 agent 不會因外部 server 問題卡死
+- **Context Hard Limit** — 大型 repo 修復可能產生極長對話，hard limit 確保 API call 不會因超限而失敗
+
+#### 潛在隱憂
+
+- **analyze-repo 的 depth 遍歷效能** — 大型 monorepo（10K+ 檔案）在 depth=3 時可能掃描大量目錄。建議加入檔案數上限（如 MAX_FILES=1000）作為安全網 → 優先級：中
+- **SWE-bench runner 的 git clone 網路依賴** — 評估框架需要 clone 完整 repo，網路不穩定或 rate limit 可能導致測試失敗。考慮支援 local repo path 作為替代 → 優先級：中
+- **test-runner 結構化輸出的 JSON 解析健壯性** — vitest/jest 的 JSON output 可能被 console.log 汙染，current regex 可能匹配錯誤的 JSON block → 優先級：低
+
+#### 延伸學習
+
+- **Atomic File Operations**: Linux `rename(2)` 在同一 filesystem 上是 atomic 的，跨 filesystem 不保證。Frogger 的 tmp 檔案使用 `${resolved}.frogger-tmp-*` 確保在同目錄（同 filesystem），正確實作
+- **Agent Evaluation Frameworks**: SWE-bench 是目前最具影響力的 coding agent benchmark，但其評估方式（test patch pass rate）有局限 — 不衡量代碼品質、修復效率或副作用。更全面的評估應結合 pass rate + token efficiency + edit minimality
+
+---
+
+### 2026-03-13: Permission System Enhancement — System Prompt Safety + Always-Deny + Policy Override
+
+**來源**: P0/P1/P2 三層安全增強計畫 — System Prompt 加入破壞性操作警告、PermissionPrompt 增加 Always Deny、ApprovalPolicy 可覆蓋
+
+**本次相關主題**: Defense in Depth, LLM Safety Guardrails, Configuration Override Pattern, Permission System
+
+#### 做得好的地方
+- **三層防禦設計（Defense in Depth）**：P0 在 LLM 層（system prompt 警告）、P1 在 UI 層（always-deny 持久化）、P2 在 config 層（policy override）分別加固。任一層失效，其他層仍可攔截危險操作
+- **最小變更原則**：P0 僅在 `systemPromptSuffix` 插入 12 行文字，不改變任何邏輯；P1 的 deny-project/deny-global 複用既有的 `buildPermissionRule` + `savePermissionRule` 基礎設施；P2 的 `policyOverride` 透過一個 spread 覆蓋就完成，不改 ModeConfig 結構
+- **快捷鍵設計**：`d` = deny-project（直覺）、`x` = deny-global（避免和 `g` = global-allow 混淆），符合最小驚訝原則
+
+#### 潛在隱憂
+- [deny-project 在沒有 workingDirectory 時靜默跳過持久化] → [可考慮向使用者顯示警告] → [優先級：低]
+- [approvalPolicy override 是全域覆蓋所有 mode，無法針對個別 mode 設定不同 policy] → [未來可擴展為 per-mode 覆蓋 `{ ask: 'auto', agent: 'confirm-all' }`] → [優先級：低]
+
+#### 延伸學習
+- **Defense in Depth（縱深防禦）**：安全架構原則，不依賴單一防線。本次實作的三層（LLM prompt → UI permission → config policy）即為此模式的應用
+- 若想深入：搜尋「OWASP Defense in Depth」或「Swiss Cheese Model」
+
+---
+
+### 2026-03-13: v0.9.0 穩定性優先 — 測試覆蓋 + Deprecated 清理 + Flaky 修復
+
+**來源**: v0.9.0 計畫 — 全面審計後的穩定性衝刺，新增 ~54 個 test cases，清理 deprecated code，修復 flaky test
+
+**本次相關主題**: Test Strategy for React Hooks, Deprecated Code Lifecycle, Flaky Test Root Cause Analysis, Pattern-based Testing
+
+#### 做得好的地方
+- **Hook 測試策略**：CLI 的四個 hook（useMode、useContextBudget、useAgentServices、useAgent）採用「核心邏輯測試」而非「React hook 渲染測試」的策略。提取 hook 內的純邏輯（cycle 算法、throttle 判斷、singleton 模式）直接測試，避免了 `renderHook` + `act()` 的 async 複雜度。此策略在 hook 邏輯重而 UI 狀態輕的場景下效率最高
+- **Flaky Test 根因分析**：git-clone 測試對不存在的 HTTPS URL 發起真實 DNS 查詢，在某些網路環境下 30 秒仍不足。根本修復：將需要網路的 URL 格式驗證測試改為直接測試 regex pattern，消除網路依賴。保留其他使用 local bare repo 的整合測試不受影響
+- **Deprecated 清理流程**：移除 `supportsVision()` 前先 grep 確認無 production code 引用（僅 test + docs），清理 constant + function + test + docs 四處，pnpm build 確認 downstream packages 無編譯錯誤
+- **Command 邊界案例覆蓋**：doctor（capabilities 顯示、gh auth 狀態、update check 失敗）、cost（reasoning tokens、cache tokens、cache 隱藏）、git-auth（status 顯示、all-negative、remove、update existing）、sessions（HOME 替換 ~）、resume（empty messages）— 每個都是 production 可能遇到的邊界
+- **Checkpoint 擴充**：覆蓋 edit-file、bash non-git、git-commit 三種 mutating tool 路徑，以及 MAX_FILE_SIZE 跳過和 getCheckpoint 查詢
+
+#### 潛在隱憂
+- [Hook 測試的核心邏輯提取模式無法覆蓋 React state + async interaction] → [未來可考慮加入少量 integration test 使用 `renderHook`] → [優先級：低]
+- [vi.fn() mock warning（`did not use 'function' or 'class'`）表示 vitest 4.x 對 mock 實作有更嚴格的檢查] → [將 mock factory 改用 class 或 named function] → [優先級：低]
+
+#### 延伸學習
+- **Test Double 分類學（Meszaros）**：本次大量使用 mock（mock return value）而非 stub/spy/fake，因為 hook 的依賴都是外部模組。理解 mock vs stub vs fake 的選擇時機有助於寫出更不脆弱的測試
+- 若想深入：搜尋「Gerard Meszaros xUnit Test Patterns」或「Martin Fowler Mocks Aren't Stubs」
+
+---
+
+### 2026-03-13: v0.8.0 Provider Capabilities + Tool Hints + Project Detection + System Prompt Rewrite
+
+**來源**: v0.8.0 計畫 — 跨 core/cli/shared 三個 packages 的四大功能（Part A-D）+ CLI 元件測試
+
+**本次相關主題**: Capability Detection Pattern, Tool Metadata Extension, Section-based Prompt Composition, Filesystem-based Project Detection, Build-time Constant Injection
+
+#### 做得好的地方
+- **ProviderCapabilities 取代 `isAnthropic` 硬編碼**：`DEFAULT_CAPABILITIES` record + `resolveCapabilities()` 合併函式 + `supportsCapability()` 查詢函式，形成三層 API。`ProviderEntry.capabilities?` 允許使用者覆蓋預設（如 openai-compatible + vision），解決了先前架構筆記 v0.2.0 中 Wave 2B 思考題提出的問題。向後相容——`supportsVision()` 標記 deprecated 但仍可用
+- **Tool Hints 的 category 分組設計**：22 個工具各自宣告 `hints` + `category`，`getToolHints()` 以固定 category 順序（read→write→search→git→test→github→system）輸出分組 Markdown。分散宣告 + 集中聚合的模式讓新增工具時只需在工具檔案中加兩個欄位，registry 自動收集
+- **Section-based System Prompt 純函式組建**：每個 section（identity、fileReferenceNote、modeGuidance、toolHints、errorRecovery、repoMap、rules、memory、projectContext）都是獨立純函式，`buildSystemPrompt()` 只做 filter + join。易測試（每個函式單獨驗證）、易擴展（新增 section 只需加一個函式 + 在陣列中插入）
+- **Project Detection 的 Convention-based 偵測**：掃描 tsconfig.json/jsconfig.json（語言）、lockfiles（套件管理器）、package.json dependencies（框架）、pytest.ini/Cargo.toml 等（測試框架）、pnpm-workspace.yaml/lerna.json（monorepo）。與 test-runner 的框架偵測是同一模式，但作用於 system prompt 層，讓 LLM 理解專案技術棧
+- **Build-time Version Injection**：`tsup.config.ts` 讀取 `package.json` version 透過 `define` 注入 `__APP_VERSION__`，`constants.ts` 使用 `typeof __APP_VERSION__ !== 'undefined'` 做 runtime fallback。單一來源（package.json）消除版本不一致風險
+- **CLI 元件測試全面覆蓋**：6 個新測試檔案（ThinkingView、ContextUsage、ChatView、PermissionPrompt、InputBox、App）共 32 個 test cases，使用 `ink-testing-library` + `React.createElement` 模式，每個元件獨立 mock 依賴
+
+#### 潛在隱憂
+- **`detectProjectInfo()` 同步掃描多個路徑** → 每次 agent turn 都呼叫 `existsSync()` / `readFileSync()` 掃描 10+ 個檔案。目前是同步 I/O，在 NFS 或慢磁碟上可能增加延遲。考慮加入 TTL cache（類似 repoMap 的 30 秒快取）→ 優先級：低
+- **Tool hints 硬編碼在各工具檔案中** → hints 文字分散在 22 個檔案，若需統一更新措辭或翻譯需逐檔修改。考慮未來抽取到集中式 config（如 `tool-hints.json`）→ 優先級：低
+- **`getToolHints()` 的 category 順序硬編碼** → `categoryOrder` 陣列寫死在方法中，新增 category 時需同步更新兩處（type + order array）。可改為從 `ToolCategory` type 自動推導順序 → 優先級：低
+- **ProviderCapabilities Zod schema 未強制型別** → `config.ts` 的 `capabilities` 欄位使用 `z.object({...}).optional()`，各欄位都是 optional boolean。惡意 config 可以設定 `{ thinking: true }` 讓不支援 thinking 的 provider 嘗試啟用，可能導致 API 錯誤。`resolveCapabilities()` 的 merge 邏輯信任使用者輸入 → 優先級：低
+
+#### 延伸學習
+- **Capability Detection vs Feature Flags**：本次的 `ProviderCapabilities` 是 runtime capability detection，類似瀏覽器的 `navigator.mediaDevices` 或 Node.js 的 `process.features`。與 feature flags（LaunchDarkly 式的遠端配置）不同之處在於：capabilities 是靜態的（由 provider 決定），feature flags 是動態的（由運營決定）。兩者可組合——capability 判斷「能不能用」，feature flag 判斷「要不要用」
+- **Section-based Prompt Engineering**：將 system prompt 拆為獨立 section 的做法在 LLM 應用中越來越常見。SWE-agent 的 ACI prompt、OpenHands 的 micro-agent prompt 都採用類似結構。好處是可以針對不同 mode/context 組合不同 section，而非維護多份完整 prompt。trade-off 是 section 之間可能有語義重複或矛盾，需要仔細管理 section 順序和內容邊界
+- 若想深入：搜尋 "capability detection pattern software design" 或 "modular prompt engineering LLM agents"
+
+**思考題**：`detectProjectInfo()` 目前僅偵測第一層（工作目錄）的技術棧。在 monorepo 中，子 package 可能使用不同語言/框架（如 `packages/api` 用 Express、`packages/web` 用 Next.js）。如何設計 per-package detection + 上下文感知的 prompt injection？考慮在 tool call 時根據目標檔案路徑動態切換 project info 的 trade-off。
 
 ---
 

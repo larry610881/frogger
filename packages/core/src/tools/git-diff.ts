@@ -7,6 +7,8 @@ export const gitDiffMetadata: ToolMetadata = {
   name: 'git-diff',
   description: 'Show git diff (unstaged changes, or staged with --staged)',
   permissionLevel: 'auto',
+  category: 'git',
+  hints: 'Review changes before committing.',
 };
 
 export function createGitDiffTool(workingDirectory: string) {

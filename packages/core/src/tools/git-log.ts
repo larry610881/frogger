@@ -7,6 +7,8 @@ export const gitLogMetadata: ToolMetadata = {
   name: 'git-log',
   description: 'Show recent git commit history',
   permissionLevel: 'auto',
+  category: 'git',
+  hints: 'View commit history. Use oneline format for overview.',
 };
 
 export function createGitLogTool(workingDirectory: string) {

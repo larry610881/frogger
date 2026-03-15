@@ -5,6 +5,9 @@ import { promisify } from 'node:util';
 import path from 'node:path';
 import type { ToolMetadata } from '@frogger/shared';
 import { truncateOutput } from './output-utils.js';
+import { assertWithinBoundary } from './security.js';
+
+const SAFE_INCLUDE_PATTERN = /^[a-zA-Z0-9.*?\[\]{},_\-\/\\]+$/;
 
 const execFileAsync = promisify(execFile);
 
@@ -13,6 +16,8 @@ export const grepMetadata: ToolMetadata = {
   description:
     'Search file contents using regex pattern (supports case-insensitive, context lines, files-only mode)',
   permissionLevel: 'auto',
+  category: 'search',
+  hints: 'Prefer over reading multiple files. Use include glob to narrow scope.',
 };
 
 export function createGrepTool(workingDirectory: string) {
@@ -44,6 +49,9 @@ export function createGrepTool(workingDirectory: string) {
       filesOnly,
     }) => {
       try {
+        if (searchPath) {
+          assertWithinBoundary(searchPath, workingDirectory);
+        }
         const searchDir = searchPath
           ? path.resolve(workingDirectory, searchPath)
           : workingDirectory;
@@ -57,6 +65,9 @@ export function createGrepTool(workingDirectory: string) {
           args.push(`-C`, String(contextLines));
         }
         if (include) {
+          if (!SAFE_INCLUDE_PATTERN.test(include)) {
+            return `Error: Invalid include pattern "${include}" — contains unsafe characters`;
+          }
           args.push(`--include=${include}`);
         }
         args.push(pattern, searchDir);

@@ -8,6 +8,8 @@ export const gitPullMetadata: ToolMetadata = {
   name: 'git-pull',
   description: 'Pull changes from a remote repository',
   permissionLevel: 'confirm',
+  category: 'git',
+  hints: 'Pull latest changes. Uses rebase by default.',
 };
 
 export function createGitPullTool(workingDirectory: string) {

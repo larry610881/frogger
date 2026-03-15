@@ -49,6 +49,7 @@ describe('ModeManager', () => {
       'list-files',
       'test-runner',
       'web-search',
+      'analyze-repo',
     ]);
 
     manager.setMode('agent');
@@ -75,6 +76,7 @@ describe('ModeManager', () => {
       'web-search',
       'gh-issue',
       'gh-pr',
+      'analyze-repo',
     ]);
   });
 

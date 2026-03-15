@@ -9,6 +9,8 @@ export const listFilesMetadata: ToolMetadata = {
   name: 'list-files',
   description: 'List files and directories',
   permissionLevel: 'auto',
+  category: 'search',
+  hints: 'List directory contents. Use glob for pattern matching.',
 };
 
 export function createListFilesTool(workingDirectory: string) {

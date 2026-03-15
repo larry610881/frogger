@@ -11,6 +11,8 @@ export const editFileMetadata: ToolMetadata = {
   name: 'edit-file',
   description: 'Edit a file using search and replace',
   permissionLevel: 'confirm',
+  category: 'write',
+  hints: 'old_text must be unique. Re-read file if match fails.',
 };
 
 export function createEditFileTool(workingDirectory: string) {
@@ -63,7 +65,7 @@ export function createEditFileTool(workingDirectory: string) {
           return `File edited: ${filePath} (fuzzy match)\n\n\`\`\`diff\n${diff}\n\`\`\``;
         }
 
-        return `Error: Could not find a match for old_text in ${filePath}`;
+        return `Error: Could not find a match for old_text in ${filePath}\nHint: Re-read the file to see current content, then retry with exact match.`;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return `Error: ${message}`;

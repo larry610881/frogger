@@ -77,7 +77,7 @@ export function useAgent(options: UseAgentOptions) {
 
     // Resolve @file references before adding to messages
     const { resolveFileReferences, findProvider: lookupProvider } = await import('@frogger/core');
-    const { supportsVision } = await import('@frogger/shared');
+    const { resolveCapabilities } = await import('@frogger/shared');
     const workingDirectory = process.cwd();
     const { cleanText, references, imageReferences, errors } = await resolveFileReferences(text, workingDirectory);
 
@@ -92,7 +92,8 @@ export function useAgent(options: UseAgentOptions) {
 
     // Check provider vision support for image references
     const providerEntry = lookupProvider(options.provider);
-    const visionSupported = providerEntry ? supportsVision(providerEntry.type) : false;
+    const capabilities = providerEntry ? resolveCapabilities(providerEntry) : undefined;
+    const visionSupported = capabilities?.vision ?? false;
 
     // Warn and skip images if provider doesn't support vision
     if (imageReferences.length > 0 && !visionSupported) {
@@ -134,18 +135,19 @@ export function useAgent(options: UseAgentOptions) {
     const taskStart = performance.now();
 
     try {
-      const { runAgent, loadConfig, createModel, ModeManager, buildSystemPrompt, createAgentTools, loadProjectContext, generateRepoMap, loadRules, loadMemory } = await import('@frogger/core');
+      const { runAgent, loadConfig, createModel, ModeManager, buildSystemPrompt, createAgentTools, loadProjectContext, generateRepoMap, loadRules, loadMemory, detectProjectInfo, formatProjectInfo } = await import('@frogger/core');
 
       const config = loadConfig({ provider: options.provider, model: options.model });
       const model = createModel(config.provider, config.model, { apiKey: config.apiKey });
       const providerEntry = lookupProvider(config.provider);
-      const modeManager = new ModeManager(activeMode);
+      const modeManager = new ModeManager(activeMode, config.approvalPolicy);
       const modeConfig = modeManager.getCurrentMode();
       const projectContext = await loadProjectContext(workingDirectory);
       const repoMap = await generateRepoMap({ workingDirectory });
       const rules = loadRules(workingDirectory);
       const memory = loadMemory();
-      const systemPrompt = buildSystemPrompt({ modeConfig, workingDirectory, projectContext, repoMap, rules, memory });
+      const projectInfoData = await detectProjectInfo(workingDirectory);
+      const projectInfo = formatProjectInfo(projectInfoData);
 
       const permissionCallback: PermissionRequestCallback = (toolName, args) => {
         return new Promise((resolve) => {
@@ -158,7 +160,7 @@ export function useAgent(options: UseAgentOptions) {
       await ensureCheckpointManager();
 
       // createAgentTools: encapsulates registry + permission + checkpoint wiring + MCP
-      const { tools, mcpClientManager } = await createAgentTools({
+      const { tools, mcpClientManager, toolHints } = await createAgentTools({
         workingDirectory,
         allowedTools: [...modeConfig.allowedTools],
         policy: modeConfig.approvalPolicy,
@@ -166,6 +168,8 @@ export function useAgent(options: UseAgentOptions) {
         existingCheckpointManager: checkpointManagerRef.current!,
         getMessageCount: () => messagesRef.current.length,
       });
+
+      const systemPrompt = buildSystemPrompt({ modeConfig, workingDirectory, projectContext, repoMap, rules, memory, toolHints, projectInfo });
 
       // Track MCP client manager for cleanup
       if (mcpClientManager) {
@@ -185,6 +189,7 @@ export function useAgent(options: UseAgentOptions) {
         abortSignal: abortController.signal,
         thinking: options.thinking,
         providerType: providerEntry?.type,
+        capabilities,
       })) {
         switch (event.type) {
           case 'text_delta':

@@ -43,6 +43,16 @@ vi.mock('../../tools/git-auth-utils.js', () => ({
   saveGitCredentials: vi.fn(),
 }));
 
+// doctor: mock update-check
+vi.mock('../update-check.js', async (importOriginal) => {
+  const orig = await importOriginal<typeof import('../update-check.js')>();
+  return {
+    ...orig,
+    checkForUpdate: vi.fn(),
+    formatUpdateMessage: vi.fn().mockReturnValue(''),
+  };
+});
+
 // ---------------------------------------------------------------------------
 // Imports (after mock declarations)
 // ---------------------------------------------------------------------------
@@ -68,6 +78,8 @@ import {
   loadGitCredentials,
   saveGitCredentials,
 } from '../../tools/git-auth-utils.js';
+
+import { checkForUpdate, formatUpdateMessage } from '../update-check.js';
 
 // ---------------------------------------------------------------------------
 // Shared helpers
@@ -405,6 +417,26 @@ describe('sessionsCommand', () => {
     expect(result.message).toContain('anthropic/claude-sonnet-4-20250514');
     expect(result.message).toContain('/resume');
   });
+
+  it('replaces HOME directory prefix with ~', async () => {
+    const home = process.env.HOME ?? '/home/test';
+    const mockSessions = [
+      {
+        id: 'sess-home',
+        updatedAt: '2025-06-01T12:00:00.000Z',
+        workingDirectory: `${home}/my-project`,
+        totalTokens: 100,
+        messages: [{ role: 'user', content: 'hi' }],
+        provider: 'deepseek',
+        model: 'deepseek-chat',
+      },
+    ];
+    mockSessionList.mockResolvedValue(mockSessions);
+
+    const result = await sessionsCommand.execute([], makeContext());
+
+    expect(result.message).toContain('~/my-project');
+  });
 });
 
 // ==========================================================================
@@ -478,6 +510,24 @@ describe('resumeCommand', () => {
     expect(result.type).toBe('message');
     expect(result.message).toContain('Session restored: sess-xyz');
     expect(result.message).toContain('Continue from where you left off');
+  });
+
+  it('handles session with empty messages array', async () => {
+    mockSessionLoad.mockResolvedValue({
+      id: 'sess-empty',
+      updatedAt: '2025-06-01T12:00:00.000Z',
+      messages: [],
+      provider: 'deepseek',
+      model: 'deepseek-chat',
+    });
+
+    const ctx = makeContext();
+    const result = await resumeCommand.execute(['sess-empty'], ctx);
+
+    expect(result.type).toBe('message');
+    expect(result.message).toContain('Session restored: sess-empty');
+    expect(result.message).toContain('Messages: 0');
+    expect(ctx.messagesRef.current).toHaveLength(0);
   });
 });
 
@@ -573,6 +623,137 @@ describe('doctorCommand', () => {
     expect(result.message).toContain('openai');
     expect(result.message).toContain('gpt-4o');
   });
+
+  it('shows capabilities when provider entry is found', async () => {
+    vi.mocked(loadConfig).mockReturnValue({
+      provider: 'anthropic',
+      model: 'claude-sonnet-4-20250514',
+      apiKey: 'sk-key',
+    });
+    vi.mocked(findProvider).mockReturnValue({
+      name: 'anthropic',
+      label: 'Anthropic',
+      type: 'anthropic',
+      envKey: 'ANTHROPIC_API_KEY',
+      models: [],
+      defaultModel: 'claude-sonnet-4-20250514',
+    });
+    vi.mocked(execa).mockResolvedValue({ exitCode: 0, stdout: 'v2.0', stderr: '' } as any);
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      currentVersion: '0.8.0',
+      latestVersion: '0.8.0',
+      updateAvailable: false,
+      updateCommand: 'npm install -g frogger',
+    });
+    vi.mocked(formatUpdateMessage).mockReturnValue('');
+
+    const result = await doctorCommand.execute([], makeContext({
+      currentProvider: 'anthropic',
+      currentModel: 'claude-sonnet-4-20250514',
+    }));
+
+    expect(result.message).toContain('Capabilities');
+    expect(result.message).toContain('vision \u2713');
+    expect(result.message).toContain('thinking \u2713');
+    expect(result.message).toContain('caching \u2713');
+  });
+
+  it('skips capabilities when provider entry is undefined', async () => {
+    vi.mocked(loadConfig).mockReturnValue({
+      provider: 'unknown',
+      model: 'unknown-model',
+      apiKey: 'sk-key',
+    });
+    vi.mocked(findProvider).mockReturnValue(undefined);
+    vi.mocked(execa).mockResolvedValue({ exitCode: 0, stdout: 'v2.0', stderr: '' } as any);
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      currentVersion: '0.8.0',
+      latestVersion: '0.8.0',
+      updateAvailable: false,
+      updateCommand: 'npm install -g frogger',
+    });
+    vi.mocked(formatUpdateMessage).mockReturnValue('');
+
+    const result = await doctorCommand.execute([], makeContext());
+
+    expect(result.message).not.toContain('Capabilities');
+  });
+
+  it('shows GitHub CLI authentication status', async () => {
+    vi.mocked(loadConfig).mockReturnValue({ provider: 'deepseek', model: 'deepseek-chat', apiKey: 'key' });
+    vi.mocked(findProvider).mockReturnValue(undefined);
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      currentVersion: '0.8.0',
+      latestVersion: '0.8.0',
+      updateAvailable: false,
+      updateCommand: 'npm install -g frogger',
+    });
+    vi.mocked(formatUpdateMessage).mockReturnValue('');
+
+    // git --version → ok, gh --version → ok, gh auth status → ok
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'git version 2.43', stderr: '' } as any) // git
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'pnpm 8.0', stderr: '' } as any) // pnpm
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'gh version 2.40', stderr: '' } as any) // gh --version
+      .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' } as any); // gh auth status
+
+    const result = await doctorCommand.execute([], makeContext());
+
+    expect(result.message).toContain('GitHub CLI');
+    expect(result.message).toContain('authenticated');
+  });
+
+  it('shows GitHub CLI not authenticated', async () => {
+    vi.mocked(loadConfig).mockReturnValue({ provider: 'deepseek', model: 'deepseek-chat', apiKey: 'key' });
+    vi.mocked(findProvider).mockReturnValue(undefined);
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      currentVersion: '0.8.0',
+      latestVersion: '0.8.0',
+      updateAvailable: false,
+      updateCommand: 'npm install -g frogger',
+    });
+    vi.mocked(formatUpdateMessage).mockReturnValue('');
+
+    vi.mocked(execa)
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'git version 2.43', stderr: '' } as any)
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'pnpm 8.0', stderr: '' } as any)
+      .mockResolvedValueOnce({ exitCode: 0, stdout: 'gh version 2.40', stderr: '' } as any)
+      .mockResolvedValueOnce({ exitCode: 1, stdout: '', stderr: 'not logged in' } as any);
+
+    const result = await doctorCommand.execute([], makeContext());
+
+    expect(result.message).toContain('not authenticated');
+  });
+
+  it('handles update check failure gracefully', async () => {
+    vi.mocked(loadConfig).mockReturnValue({ provider: 'deepseek', model: 'deepseek-chat', apiKey: 'key' });
+    vi.mocked(findProvider).mockReturnValue(undefined);
+    vi.mocked(execa).mockResolvedValue({ exitCode: 0, stdout: 'v2.0', stderr: '' } as any);
+    vi.mocked(checkForUpdate).mockRejectedValue(new Error('network error'));
+
+    const result = await doctorCommand.execute([], makeContext());
+
+    expect(result.message).toContain('could not check');
+  });
+
+  it('shows update available message', async () => {
+    vi.mocked(loadConfig).mockReturnValue({ provider: 'deepseek', model: 'deepseek-chat', apiKey: 'key' });
+    vi.mocked(findProvider).mockReturnValue(undefined);
+    vi.mocked(execa).mockResolvedValue({ exitCode: 0, stdout: 'v2.0', stderr: '' } as any);
+    vi.mocked(checkForUpdate).mockResolvedValue({
+      currentVersion: '0.7.0',
+      latestVersion: '0.8.0',
+      updateAvailable: true,
+      updateCommand: 'npm install -g frogger',
+    });
+    vi.mocked(formatUpdateMessage).mockReturnValue('Update available: 0.7.0 → 0.8.0\nRun: npm install -g frogger');
+
+    const result = await doctorCommand.execute([], makeContext());
+
+    expect(result.message).toContain('0.7.0');
+    expect(result.message).toContain('0.8.0');
+    expect(result.message).toContain('available');
+  });
 });
 
 // ==========================================================================
@@ -621,5 +802,83 @@ describe('gitAuthCommand', () => {
 
     expect(result.type).toBe('error');
     expect(result.message).toBe('No credential found for gitlab.com.');
+  });
+
+  it('shows auth status when called with no args', async () => {
+    vi.mocked(detectGitAuthStatus).mockResolvedValue({
+      ghCli: { available: true, authenticated: true, username: 'testuser' },
+      ssh: { hasKeys: true, keyPaths: ['~/.ssh/id_ed25519'] },
+      credentialHelper: { configured: true, helper: 'store' },
+      froggerPat: { hasCredentials: true, hosts: ['github.com'] },
+    });
+
+    const result = await gitAuthCommand.execute([], makeContext());
+
+    expect(result.type).toBe('message');
+    expect(result.message).toContain('Git Authentication Status');
+    expect(result.message).toContain('authenticated as testuser');
+    expect(result.message).toContain('SSH keys found');
+    expect(result.message).toContain('credential helper: store');
+    expect(result.message).toContain('configured for github.com');
+  });
+
+  it('shows all-negative status when nothing configured', async () => {
+    vi.mocked(detectGitAuthStatus).mockResolvedValue({
+      ghCli: { available: false, authenticated: false },
+      ssh: { hasKeys: false, keyPaths: [] },
+      credentialHelper: { configured: false },
+      froggerPat: { hasCredentials: false, hosts: [] },
+    });
+
+    const result = await gitAuthCommand.execute([], makeContext());
+
+    expect(result.type).toBe('message');
+    expect(result.message).toContain('not installed');
+    expect(result.message).toContain('none found');
+    expect(result.message).toContain('not configured');
+    expect(result.message).toContain('none configured');
+  });
+
+  it('removes existing credential', async () => {
+    vi.mocked(loadGitCredentials).mockResolvedValue({
+      credentials: [{ host: 'github.com', username: 'user1', token: 'ghp_xxx', createdAt: '2025-01-01' }],
+    });
+    vi.mocked(saveGitCredentials).mockResolvedValue(undefined);
+
+    const result = await gitAuthCommand.execute(['remove', 'github.com'], makeContext());
+
+    expect(result.type).toBe('message');
+    expect(result.message).toContain('Credential removed for github.com');
+    expect(saveGitCredentials).toHaveBeenCalledWith({ credentials: [] });
+  });
+
+  it('returns error when "remove" called with no host arg', async () => {
+    const result = await gitAuthCommand.execute(['remove'], makeContext());
+
+    expect(result.type).toBe('error');
+    expect(result.message).toContain('Usage: /git-auth remove');
+  });
+
+  it('updates existing credential when host already exists', async () => {
+    vi.mocked(loadGitCredentials).mockResolvedValue({
+      credentials: [{ host: 'github.com', username: 'olduser', token: 'ghp_old', createdAt: '2025-01-01' }],
+    });
+    vi.mocked(saveGitCredentials).mockResolvedValue(undefined);
+
+    const result = await gitAuthCommand.execute(
+      ['add', 'github.com', 'newuser', 'ghp_new'],
+      makeContext(),
+    );
+
+    expect(result.type).toBe('message');
+    expect(result.message).toContain('Credential saved for github.com');
+    expect(result.message).toContain('newuser');
+    expect(saveGitCredentials).toHaveBeenCalledWith({
+      credentials: [expect.objectContaining({
+        host: 'github.com',
+        username: 'newuser',
+        token: 'ghp_new',
+      })],
+    });
   });
 });

@@ -11,6 +11,8 @@ export const gitCloneMetadata: ToolMetadata = {
   name: 'git-clone',
   description: 'Clone a git repository',
   permissionLevel: 'confirm',
+  category: 'git',
+  hints: 'Clone remote repositories.',
 };
 
 export function createGitCloneTool(workingDirectory: string) {

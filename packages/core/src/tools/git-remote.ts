@@ -9,6 +9,8 @@ export const gitRemoteMetadata: ToolMetadata = {
   name: 'git-remote',
   description: 'Manage git remotes (list, add, remove, get-url)',
   permissionLevel: 'confirm',
+  category: 'git',
+  hints: 'Manage remote repositories.',
 };
 
 export function createGitRemoteTool(workingDirectory: string) {

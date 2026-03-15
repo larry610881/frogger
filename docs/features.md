@@ -1,6 +1,6 @@
 # Frogger 功能清單
 
-> 版本：v0.7.0 | 更新日期：2026-03-12
+> 版本：v0.11.0 | 更新日期：2026-03-15
 
 ---
 
@@ -10,9 +10,10 @@
 
 - **串流式 LLM 呼叫** — 基於 Vercel AI SDK `streamText()` 實作非同步串流
 - **事件流輸出** — 產出型別化 `AgentEvent`（text_delta、thinking_delta、tool_call、tool_result、error、done）
-- **多步驟 Tool Calling** — 支援連續多輪工具呼叫，最多 30 步（`MAX_STEPS`）
+- **多步驟 Tool Calling** — 支援連續多輪工具呼叫，最多 50 步（`MAX_STEPS`）
 - **中斷支援** — 接受 `AbortSignal`，Ctrl+C 可中斷串流
-- **自動重試** — 遇到暫時性 API 錯誤（429、500、502、503、ECONNRESET、ETIMEDOUT）自動重試，指數退避 + jitter；僅在尚未 yield 任何事件時重試（`hasYielded` 旗標防止 UI 收到不一致的部分事件流）；預設最多 3 次重試，可透過 `maxRetries` 參數調整
+- **自動重試** — 遇到暫時性 API 錯誤（429、500、502、503、ECONNRESET、ETIMEDOUT）自動重試，指數退避 + jitter；僅在尚未 yield 任何事件時重試（`hasYielded` 旗標防止 UI 收到不一致的部分事件流）；預設最多 3 次重試，可透過 `maxRetries` 參數調整；`sleep()` 正常 resolve 後自動清除 abort listener 防止記憶體洩漏
+- **Context Hard Limit** — 壓縮後仍超限時，強制截斷最舊訊息（保留第一則 + 最近 4 則），防止超大 prompt 導致 API error
 - **Token 用量回報** — 每輪結束時回報 promptTokens、completionTokens、totalTokens、reasoningTokens、cacheReadTokens、cacheCreationTokens
 - **即時 Usage 更新** — 攔截 `finish-step` 事件，逐步累加 token 用量並發出 `usage_update` 事件
 - **Extended Thinking** — 啟用 Anthropic Claude 推理模式，透過 `providerOptions.anthropic.thinking` 讓模型先推理再行動；可透過 `~/.frogger/config.json` 設定 `thinking.enabled` + `budgetTokens`（預設 10,000），CLI `--thinking` / `--no-thinking` 可覆蓋；僅 Anthropic provider 生效，其他 provider 靜默忽略
@@ -23,25 +24,26 @@
 
 三種模式，循環順序：ask → plan → agent → ask。
 
-- **ask 模式** — 唯讀模式，僅允許讀取類工具（read-file、glob、grep、list-files、web-search）
-- **plan 模式** — 探索模式，分析程式碼後產出高階計畫；禁止寫入；計畫完成後自動切換至 agent 模式執行；可使用 web-search
-- **agent 模式** — 完整存取，可使用全部 22 個工具（含 save-memory、web-search、gh-issue、gh-pr）；寫入操作需使用者確認
-- **ModeManager** — 提供 `getCurrentMode()`、`setMode()`、`cycle()` 方法管理模式狀態
+- **ask 模式** — 唯讀模式，僅允許讀取類工具（read-file、glob、grep、list-files、web-search、analyze-repo）
+- **plan 模式** — 探索模式，分析程式碼後產出高階計畫；禁止寫入；計畫完成後自動切換至 agent 模式執行；可使用 web-search、analyze-repo
+- **agent 模式** — 完整存取，可使用全部 23 個工具（含 save-memory、web-search、gh-issue、gh-pr、analyze-repo）；寫入操作需使用者確認
+- **ModeManager** — 提供 `getCurrentMode()`、`setMode()`、`cycle()` 方法管理模式狀態；支援 `policyOverride` 參數覆蓋 mode 預設的 `approvalPolicy`
 
-### Tool System（22 tools）
+### Tool System（23 tools）
 
 #### 檔案系統 — 讀取（permission: auto）
 
-- **read-file** — 讀取檔案內容，支援 `offset`（0-based 行號）與 `limit`（最大行數）參數做分段讀取，含路徑邊界檢查防護
+- **read-file** — 讀取檔案內容，支援 `offset`（0-based 行號）與 `limit`（最大行數）參數做分段讀取，含路徑邊界檢查防護；檔案不存在時回傳 hint 建議使用 glob 搜尋
+- **analyze-repo** — 分析倉庫結構：depth-aware 目錄樹（預設 3 層）、標記關鍵檔案（README、package.json、setup.py、Makefile、test 目錄）、檔案類型分佈統計；gitignore-aware 掃描；所有模式皆可使用
 - **glob** — 以 glob 模式搜尋檔案，支援指定子目錄
 - **grep** — 以正規表達式搜尋檔案內容，支援 `--include` 篩選、`ignoreCase` 不區分大小寫、`contextLines` 上下文行數、`filesOnly` 僅回傳檔案路徑
 - **list-files** — 列出檔案與目錄，支援遞迴模式
 
 #### 檔案系統 — 寫入（permission: confirm）
 
-- **write-file** — 建立或覆寫檔案，自動建立父目錄，回傳 unified diff
-- **edit-file** — 搜尋替換編輯，支援精確比對與 fuzzy match（diff-match-patch），`replace_all` 選項可替換所有匹配，回傳 unified diff
-- **bash** — 執行 shell 命令，可設定 `timeout`（預設 30 秒，最長 10 分鐘），內建危險命令封鎖清單，逾時自動終止並回報
+- **write-file** — 建立或覆寫檔案，自動建立父目錄，回傳 unified diff；原子寫入（先寫 `.frogger-tmp-*` 暫存檔再 `rename()`），防止中途 crash 損毀檔案
+- **edit-file** — 搜尋替換編輯，支援精確比對與 fuzzy match（diff-match-patch），`replace_all` 選項可替換所有匹配，回傳 unified diff；匹配失敗時回傳錯誤恢復 hint 建議重新讀取檔案
+- **bash** — 執行 shell 命令，可設定 `timeout`（預設 30 秒，最長 10 分鐘），內建危險命令封鎖清單，逾時自動終止並回報；非零退出時附加錯誤分析 hint
 
 #### Git — 讀取（permission: auto）
 
@@ -60,7 +62,7 @@
 
 #### 測試（permission: auto）
 
-- **test-runner** — 自動偵測專案測試框架（vitest → jest → pytest → cargo → go → npm script）並執行測試；支援 `filter` 篩選測試檔/名稱、`framework` 手動指定框架、`timeout` 逾時設定（預設 60 秒）；回傳結構化結果（pass/fail/skip 數量 + 失敗詳情 + 執行命令）
+- **test-runner** — 自動偵測專案測試框架（vitest → jest → pytest → cargo → go → npm script）並執行測試；支援 `filter` 篩選測試檔/名稱、`framework` 手動指定框架、`timeout` 逾時設定（預設 60 秒）；回傳結構化 Markdown 摘要（## Test Summary + ### Failures + ## Raw Output），包含 pass/fail/skip 數量、失敗詳情（名稱 + 錯誤訊息）、執行命令；pytest/vitest/jest/go 各有專屬解析器
 
 #### 記憶（permission: confirm）
 
@@ -77,7 +79,8 @@
 
 #### 工具基礎架構
 
-- **ToolRegistry** — 集中式工具註冊表，支援按模式篩選工具，支援 `onBeforeExecute` / `onAfterExecute` hook 在工具執行前後觸發回調
+- **ToolRegistry** — 集中式工具註冊表，支援按模式篩選工具，支援 `onBeforeExecute` / `onAfterExecute` hook 在工具執行前後觸發回調；`getToolHints()` 方法依 category 分組產出 Markdown 格式的工具使用指南，注入 system prompt 輔助 LLM 選擇工具
+- **Tool Hints & Category** — 每個工具的 `ToolMetadata` 包含 `hints`（使用建議）和 `category`（分類標籤：read/write/search/git/test/github/system），用於 system prompt 的工具指南區塊
 - **Hooks System** — 透過 `.frogger/hooks.json`（專案級）或 `~/.frogger/hooks.json`（全域級）設定 PreToolUse / PostToolUse shell hooks；支援 `*`（全部）、精確匹配、前綴匹配（`git-*`）三種 matcher；環境變數注入 `FROGGER_TOOL_NAME`、`FROGGER_TOOL_ARGS`、`FROGGER_TOOL_RESULT`（自動截斷至 `MAX_TOOL_RESULT_SIZE` 100KB，防止超過 shell 128KB 環境變數限制）、`FROGGER_HOOK_TYPE`、`FROGGER_WORKING_DIR`；PreToolUse 失敗阻斷工具執行，PostToolUse 失敗僅警告；預設 timeout 10 秒，最大 60 秒；全域 hooks 先觸發、專案 hooks 後觸發；專案級 hooks.json 首次載入需使用者確認（SHA-256 hash 追蹤，內容變更後需重新確認），防止惡意 repo 植入
 - **路徑安全防護** — `assertWithinBoundary()` 防止路徑穿越攻擊（涵蓋 read-file、write-file、edit-file、glob、grep、list-files）
 - **Bash 封鎖清單** — 正規表達式封鎖危險命令（rm -rf /、fork bomb 等）
@@ -89,13 +92,14 @@
 - **auto 策略** — 所有工具執行不需確認
 - **confirm-writes 策略** — 寫入類工具需使用者核准，讀取類自動放行
 - **confirm-all 策略** — 所有工具執行均需使用者核准
-- **回應選項** — allow（允許一次）、deny（拒絕）、always-project（專案級持久化）、always-global（全域持久化）
+- **回應選項** — allow（允許一次）、deny（拒絕）、always-project（專案級持久化允許）、always-global（全域持久化允許）、deny-project（專案級持久化拒絕）、deny-global（全域持久化拒絕）
 - **持久化規則** — 專案級儲存於 `{workDir}/.frogger/permissions.json`，全域級儲存於 `~/.frogger/permissions.json`
 - **規則匹配** — 精確工具名匹配、bash 前綴匹配（`bash:npm test` 匹配 `npm test --watch`）、glob 匹配（`bash:git *`）
 - **優先順序** — 專案 deny > 專案 allow > 全域 deny > 全域 allow > 提示使用者
 - **Zod 驗證** — permissions.json 使用 Zod `safeParse` 驗證結構，malformed 資料安全降級為空規則
 - **專案級確認** — 首次載入專案級 permissions.json 時需使用者確認，透過 SHA-256 hash 追蹤已確認檔案，檔案內容變更後需重新確認；自動清理不存在路徑的過期 hash 條目
 - **PermissionManager.reset()** — 清除已記憶的 session 允許狀態（如 /clear 後）
+- **ApprovalPolicy 覆蓋** — 使用者可在 `~/.frogger/config.json` 設定 `approvalPolicy`（auto/confirm-writes/confirm-all），覆蓋 mode 預設策略；優先順序：CLI args > config file > mode 預設值
 
 ### Context Management
 
@@ -150,7 +154,7 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 - **SSE Transport** — `{ transport: "sse", url, headers }` 設定，使用 `SSEClientTransport` 連線；headers 支援 `${ENV_VAR}` 環境變數解析
 - **Streamable HTTP Transport** — `{ transport: "http", url, headers }` 設定，使用 `StreamableHTTPClientTransport` 連線；headers 同樣支援環境變數解析
 - **Transport Factory** — `createTransport(config)` 工廠函數，依 config type 動態 import 對應 transport（SSE/HTTP 僅在需要時載入，stdio-only 使用者不會載入多餘依賴）
-- **MCPClientManager** — 管理 MCP server 連線生命週期，啟動時連線、程式退出時關閉；連線失敗自動重試（exponential backoff，最多 3 次）；支援 `reconnectAll()` 重新連線已斷線的 server；transports 泛化為 `Transport` 型別
+- **MCPClientManager** — 管理 MCP server 連線生命週期，啟動時連線、程式退出時關閉；連線失敗自動重試（exponential backoff，最多 3 次）；每次連線有 30 秒 timeout 防止 server 掛起導致 agent 凍結；支援 `reconnectAll()` 重新連線已斷線的 server；transports 泛化為 `Transport` 型別
 - **工具轉換** — 自動將 MCP server 的 tool definitions 轉換為 Vercel AI SDK `tool()` 格式，名稱以 `mcp-{serverName}-{toolName}` 前綴避免衝突；支援 `oneOf` → `z.union()` 和 `allOf` → `z.intersection()` 進階 JSON Schema 轉換
 - **Permission** — MCP 工具預設 `confirm` 權限等級（外部工具安全考量）
 - **環境變數替換** — MCP config 的 `env`（stdio）和 `headers`（SSE/HTTP）值均支援 `${ENV_VAR}` 語法，啟動時自動解析
@@ -170,7 +174,7 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 - **/compact-threshold** — 查詢或設定自動壓縮閾值（10–100%）
 - **/cost** — 顯示 session 累計 token 用量與估算費用
 - **/context** — 顯示 context window 詳細用量（ASCII bar + token 數據）
-- **/doctor** — 診斷環境（Node.js、Git、pnpm、GitHub CLI 認證狀態、API key、Provider/Model、版本更新檢查）
+- **/doctor** — 診斷環境（Node.js、Git、pnpm、GitHub CLI 認證狀態、API key、Provider/Model、版本更新檢查、Provider Capabilities 顯示 vision/thinking/caching/tool-use ✓/✗）
 - **/update** — 檢查 npm registry 是否有新版本，顯示 `currentVersion → latestVersion` 及升級命令
 - **/model** — 開啟互動式 provider/model 選擇器
 - **/setup** — 啟動完整設定精靈（provider、API key、model）
@@ -215,7 +219,7 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 - **loadProviders()** — 讀取 providers.json，以 Zod schema 驗證結構完整性，損壞或無效資料自動 fallback 到預設值
 - **addProvider() / removeProvider()** — 動態新增或移除 provider
 - **findModelInfo()** — 查詢 model 的 contextWindow 與 maxOutputTokens
-- **supportsVision()** — 檢查 provider 是否支援 vision（圖片輸入），僅 Anthropic/OpenAI 回傳 true
+- **ProviderCapabilities** — 結構化能力偵測系統，取代硬編碼 `isAnthropic` 檢查；`ProviderCapabilities` 介面定義 vision/thinking/caching/toolUse 四項能力；`DEFAULT_CAPABILITIES` 記錄各 provider 預設能力；`resolveCapabilities(entry)` 合併預設與自訂能力；`supportsCapability(entry, key)` 查詢特定能力；`ProviderEntry` 可透過 `capabilities?` 欄位自訂覆蓋（如 openai-compatible provider 啟用 vision）
 
 #### Extended Thinking & Prompt Caching
 
@@ -224,10 +228,14 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 
 #### 系統提示詞
 
-- **動態組成** — 應用身份 + 工作目錄 + 可用工具清單 + 模式指示 + Repo Map + Rules + Memory + FROGGER.md 專案上下文
+- **Section-based 動態組成** — 以純函式逐段組建：應用身份 + @file 引用說明 + 模式指示 + Tool Hints + 錯誤回復（ask/plan 限定）+ Repo Map + Rules + Memory + 專案偵測資訊 + FROGGER.md 專案上下文；`SystemPromptOptions` 介面集中管理所有參數
+- **Tool Hints 注入** — `ToolRegistry.getToolHints()` 依 category（Reading/Writing/Search/Git/Testing/GitHub/System）分組，產出 Markdown 格式的工具使用指南注入 system prompt，引導 LLM 選擇正確工具
+- **專案偵測（Project Detection）** — `detectProjectInfo()` 掃描工作目錄的檔案系統標記（tsconfig.json、lockfiles、package.json dependencies、pytest.ini 等），自動偵測語言、套件管理器、框架、測試框架、monorepo、git repo 狀態；`formatProjectInfo()` 格式化為 system prompt 注入段落
+- **錯誤回復指引** — ask/plan 模式注入額外的錯誤回復策略（建議使用者切換至 agent 模式），agent 模式則依賴模式自身的策略化提示
 - **Rules 注入** — 自動掃描 `~/.frogger/rules/*.md`（全域）和 `{workDir}/.frogger/rules/*.md`（專案級）的 Markdown 規則檔，按全域先、專案後、同級字母排序的順序合併注入 system prompt；上限 50,000 字元，超限自動截斷並警告；內建 memoization 機制（file set hash 比對），僅在規則檔案變更時重新載入
 - **Repo Map** — 自動生成 gitignore-aware 檔案樹狀結構（上限 500 檔案 / 8000 字元）注入系統提示詞，幫助 LLM 理解專案結構；內建 30 秒 TTL 快取，避免同一 session 重複掃描
-- **Agent 模式策略化提示** — 結構化問題解決方法（Understand→Locate→Plan→Implement→Verify）、工具使用最佳實踐、錯誤回復策略
+- **Agent 模式策略化提示** — 結構化問題解決方法（Understand→Locate→Plan→Implement→Verify）、工具使用最佳實踐、錯誤回復策略；SWE-bench 策略強化（Repository Exploration、Bug Localization Strategy、Multi-File Editing 三段指引）
+- **破壞性操作安全警告** — Agent 模式 system prompt 包含 Safety section，列出高危操作（rm -rf、git push --force、git reset --hard、DROP/TRUNCATE 等），指示 LLM 執行前暫停說明意圖並等待使用者確認
 
 #### Git 驗證
 
@@ -251,7 +259,7 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 - **ChatView** — 渲染對話訊息（使用者/助手/工具結果），提取 diff 區塊交由 DiffView 顯示
 - **MarkdownView** — 豐富 Markdown 渲染：code block（含語言標籤）、標題、清單（有序+無序）、粗體、行內程式碼、blockquote（`│` 前綴）、table（自動對齊欄寬）、link（藍色底線）、strikethrough（dimColor）
 - **InputBox** — 文字輸入，方塊游標，`/` 開頭時顯示 Tab 補全下拉選單；支援 paste 偵測（5+ 行自動摺疊為 `[pasted text #N +X lines]`，短 paste 展開為空格分隔）；Backspace 刪除到 paste marker 邊界時整段移除（全域位置掃描）；↑/↓ 箭頭鍵瀏覽歷史輸入；Shift+Enter 插入換行（多行輸入）
-- **PermissionPrompt** — 黃色圓角邊框彈窗，顯示工具名稱與參數，4 個選項（Allow/Deny/Always project/Always global）支援 ↑/↓ 箭頭鍵選取 + Enter 確認 + y/n/a/g 快捷鍵
+- **PermissionPrompt** — 黃色圓角邊框彈窗，顯示工具名稱與參數，6 個選項（Allow/Deny/Always allow project/Always allow global/Always deny project/Always deny global）支援 ↑/↓ 箭頭鍵選取 + Enter 確認 + y/n/a/g/d/x 快捷鍵
 - **WelcomeBanner** — 雙欄式歡迎橫幅（🐸 logo + 使用者名稱 + provider/model + 工作目錄 | Tips + Recent sessions），僅在初始畫面顯示
 - **ModeIndicator** — 左下角狀態列，以顏色顯示當前模式（藍=ask、黃=plan、綠=agent）
 - **ContextUsage** — 右下角狀態列，以顏色顯示上下文用量百分比（綠<70%、黃70-90%、紅>90%）
@@ -277,7 +285,7 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 - **Tab** — 接受選中的命令補全
 - **↑/↓ Arrow** — 瀏覽歷史輸入（無補全選單時）／命令補全下拉選單導航
 - **Backspace/Delete** — 刪除最後一個字元
-- **y/n/a/g** — 在 PermissionPrompt 中允許/拒絕/專案級永久允許/全域永久允許
+- **y/n/a/g/d/x** — 在 PermissionPrompt 中允許/拒絕/專案級永久允許/全域永久允許/專案級永久拒絕/全域永久拒絕
 - **↑/↓ + Enter** — 在 PermissionPrompt 中以箭頭鍵選取選項並確認
 - **Ctrl+C** — 中斷串流或退出程式
 - **Escape** — 退出設定精靈
@@ -310,7 +318,7 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 
 `frogger --pipe "prompt" [--output file]` — 不啟動 TUI，直接執行 agent 並輸出 JSON Lines。
 
-- **JSON Lines 輸出** — 每個 event 一行 JSON（text_delta、tool_call、tool_result、error、done）
+- **JSON Lines 輸出** — 每個 event 一行 JSON（text_delta、tool_call、tool_result、error、done）；支援 backpressure 處理（stdout.write 返回 false 時 await drain）；EPIPE 錯誤優雅退出；SIGPIPE 信號處理
 - **Headless 執行** — 所有 permission 自動核准（auto），適用於 SWE-bench harness 和 CI/CD
 - **工具白名單** — `--pipe-allow <tools>` 限制可用工具，強化 pipe mode 安全性
 - **stdin 支援** — 非 TTY 時從 stdin 讀取 prompt（`echo "fix bug" | frogger --pipe`）
@@ -337,19 +345,21 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 - **TokenUsage** — Token 用量：promptTokens、completionTokens、totalTokens、reasoningTokens（optional）、cacheReadTokens（optional）、cacheCreationTokens（optional）
 - **ProviderType** — Provider 類型：`'openai-compatible' | 'anthropic' | 'openai'`
 - **ModelInfo** — Model 資訊：名稱、contextWindow、maxOutputTokens
-- **ProviderEntry** — Provider 完整定義：名稱、標籤、類型、端點、環境變數、models
+- **ProviderEntry** — Provider 完整定義：名稱、標籤、類型、端點、環境變數、models、`capabilities?`（自訂能力覆蓋）
+- **ProviderCapabilities** — Provider 能力介面：`{ vision, thinking, caching, toolUse }`
+- **ToolCategory** — 工具分類標籤：`'read' | 'write' | 'search' | 'git' | 'test' | 'github' | 'system'`
 - **PermissionLevel** — 權限等級：`'auto' | 'confirm'`
 - **PermissionResponse** — 權限回應：`'allow' | 'deny' | 'always-project' | 'always-global'`
-- **ToolMetadata** — 工具元資料：名稱、描述、權限等級
+- **ToolMetadata** — 工具元資料：名稱、描述、權限等級、`hints?`（使用建議）、`category?`（分類標籤）
 
 ### Constants
 
-- **APP_VERSION** — `'0.3.0'`，顯示於啟動橫幅與 `--version`
+- **APP_VERSION** — 透過 tsup `define` 在建置時從 `package.json` 注入版本號（`__APP_VERSION__`），開發環境 fallback 為 `'0.1.9'`；顯示於啟動橫幅與 `--version`
 - **MAX_IMAGE_FILE_SIZE** — `5 * 1024 * 1024`（5MB），圖片檔案大小上限
 - **APP_NAME** — `'frogger'`，用於系統提示詞身份識別
 - **CONFIG_DIR** — `'.frogger'`，`~` 下的設定/session 子目錄
 - **PROJECT_FILE** — `'FROGGER.md'`，專案上下文檔案
-- **MAX_STEPS** — `30`，每輪最多 LLM 工具呼叫步數
+- **MAX_STEPS** — `50`，每輪最多 LLM 工具呼叫步數
 - **DEFAULT_MODEL / DEFAULT_PROVIDER** — `'deepseek-chat'` / `'deepseek'`
 - **DEFAULT_CONTEXT_WINDOW** — `128000`，未知 model 的預設上下文視窗
 - **DEFAULT_MAX_OUTPUT_TOKENS** — `8192`，未知 model 的預設最大輸出 token

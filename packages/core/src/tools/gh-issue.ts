@@ -7,6 +7,8 @@ export const ghIssueMetadata: ToolMetadata = {
   name: 'gh-issue',
   description: 'Read GitHub issue details (title, body, labels, comments)',
   permissionLevel: 'auto',
+  category: 'github',
+  hints: 'Read GitHub issues for context and requirements.',
 };
 
 export function createGhIssueTool(workingDirectory: string) {

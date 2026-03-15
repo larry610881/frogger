@@ -227,6 +227,41 @@ export function parseTestOutput(
   return result;
 }
 
+/**
+ * Format parsed test results into a structured, human-readable response.
+ */
+export function formatTestResponse(parsed: TestResult, rawOutput?: string): string {
+  const lines: string[] = [];
+
+  // Summary header
+  lines.push('## Test Summary');
+  lines.push(`- **Framework**: ${parsed.framework}`);
+  lines.push(`- **Passed**: ${parsed.passed}, **Failed**: ${parsed.failed}, **Skipped**: ${parsed.skipped}`);
+  if (parsed.duration) lines.push(`- **Duration**: ${parsed.duration}`);
+  lines.push(`- **Command**: \`${parsed.command}\``);
+
+  // Failure details
+  if (parsed.failures.length > 0) {
+    lines.push('');
+    lines.push('### Failures');
+    for (const f of parsed.failures) {
+      lines.push(`- **[FAILED]** ${f.name}`);
+      lines.push(`  ${f.error.split('\n')[0]}`);
+    }
+  }
+
+  // Raw output (for failed tests)
+  if (rawOutput) {
+    lines.push('');
+    lines.push('## Raw Output');
+    lines.push('```');
+    lines.push(rawOutput);
+    lines.push('```');
+  }
+
+  return lines.join('\n');
+}
+
 export function createTestRunnerTool(workingDirectory: string) {
   return tool({
     description: testRunnerMetadata.description,
@@ -279,13 +314,12 @@ export function createTestRunnerTool(workingDirectory: string) {
           commandStr,
         );
 
-        // Add raw output for context if tests failed
-        if (parsed.failed > 0) {
-          const rawOutput = truncateOutput(`${result.stdout}\n${result.stderr}`, 10000);
-          return JSON.stringify(parsed) + '\n\nRaw output:\n' + rawOutput;
-        }
+        // Include raw output only for failed tests
+        const rawOutput = parsed.failed > 0
+          ? truncateOutput(`${result.stdout}\n${result.stderr}`, 10000)
+          : undefined;
 
-        return JSON.stringify(parsed);
+        return formatTestResponse(parsed, rawOutput);
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return `Error running tests: ${message}`;

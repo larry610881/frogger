@@ -21,6 +21,7 @@ import { createSaveMemoryTool, saveMemoryMetadata } from './save-memory.js';
 import { createWebSearchTool, webSearchMetadata } from './web-search.js';
 import { createGhIssueTool, ghIssueMetadata } from './gh-issue.js';
 import { createGhPrTool, ghPrMetadata } from './gh-pr.js';
+import { createAnalyzeRepoTool, analyzeRepoMetadata } from './analyze-repo.js';
 
 export { ToolRegistry, type PermissionRequestCallback } from './registry.js';
 export { assertWithinBoundary } from './security.js';
@@ -47,6 +48,7 @@ export { createWebSearchTool, webSearchMetadata } from './web-search.js';
 export type { SearchProvider, SearchResult } from './web-search.js';
 export { createGhIssueTool, ghIssueMetadata } from './gh-issue.js';
 export { createGhPrTool, ghPrMetadata } from './gh-pr.js';
+export { createAnalyzeRepoTool, analyzeRepoMetadata } from './analyze-repo.js';
 export {
   detectGitAuthStatus, resolveGitAuthEnv, resolveGitAuthEnvForUrl,
   loadGitCredentials, saveGitCredentials, extractHostFromRemoteUrl, filterSensitiveOutput,
@@ -78,6 +80,7 @@ export function createToolRegistry(workingDirectory: string): ToolRegistry {
   registry.register('web-search', createWebSearchTool(workingDirectory), webSearchMetadata);
   registry.register('gh-issue', createGhIssueTool(workingDirectory), ghIssueMetadata);
   registry.register('gh-pr', createGhPrTool(workingDirectory), ghPrMetadata);
+  registry.register('analyze-repo', createAnalyzeRepoTool(workingDirectory), analyzeRepoMetadata);
 
   return registry;
 }

@@ -3,11 +3,14 @@ import { z } from 'zod';
 import { globby } from 'globby';
 import path from 'node:path';
 import type { ToolMetadata } from '@frogger/shared';
+import { assertWithinBoundary } from './security.js';
 
 export const globMetadata: ToolMetadata = {
   name: 'glob',
   description: 'Search for files matching a glob pattern',
   permissionLevel: 'auto',
+  category: 'search',
+  hints: 'For finding file paths by pattern. Use grep for content search.',
 };
 
 export function createGlobTool(workingDirectory: string) {
@@ -19,6 +22,9 @@ export function createGlobTool(workingDirectory: string) {
     }),
     execute: async ({ pattern, cwd }) => {
       try {
+        if (cwd) {
+          assertWithinBoundary(cwd, workingDirectory);
+        }
         const searchDir = cwd
           ? path.resolve(workingDirectory, cwd)
           : workingDirectory;

@@ -467,6 +467,135 @@ describe('runAgent', () => {
     });
   });
 
+  describe('capabilities-based feature detection', () => {
+    it('skips thinking when capabilities.thinking is false', async () => {
+      vi.mocked(streamText).mockReturnValue(
+        createMockStream([]) as any,
+      );
+
+      for await (const _event of runAgent({
+        model: {} as any,
+        systemPrompt: 'test',
+        messages: [],
+        tools: {},
+        thinking: { enabled: true, budgetTokens: 10000 },
+        providerType: 'anthropic',
+        capabilities: { vision: true, thinking: false, caching: true, toolUse: true },
+      })) {
+        // drain
+      }
+
+      const callArgs = vi.mocked(streamText).mock.calls[0]![0];
+      // thinking should NOT be in providerOptions since capabilities.thinking is false
+      expect(callArgs.providerOptions?.anthropic).not.toHaveProperty('thinking');
+      // caching should still be present
+      expect(callArgs.providerOptions).toEqual({
+        anthropic: {
+          cacheControl: { type: 'ephemeral' },
+        },
+      });
+    });
+
+    it('enables thinking when capabilities.thinking is true', async () => {
+      vi.mocked(streamText).mockReturnValue(
+        createMockStream([]) as any,
+      );
+
+      for await (const _event of runAgent({
+        model: {} as any,
+        systemPrompt: 'test',
+        messages: [],
+        tools: {},
+        thinking: { enabled: true, budgetTokens: 5000 },
+        capabilities: { vision: true, thinking: true, caching: true, toolUse: true },
+      })) {
+        // drain
+      }
+
+      const callArgs = vi.mocked(streamText).mock.calls[0]![0];
+      expect(callArgs.providerOptions).toEqual({
+        anthropic: {
+          thinking: { type: 'enabled', budgetTokens: 5000 },
+          cacheControl: { type: 'ephemeral' },
+        },
+      });
+    });
+
+    it('skips caching when capabilities.caching is false', async () => {
+      vi.mocked(streamText).mockReturnValue(
+        createMockStream([]) as any,
+      );
+
+      for await (const _event of runAgent({
+        model: {} as any,
+        systemPrompt: 'test',
+        messages: [],
+        tools: {},
+        capabilities: { vision: true, thinking: false, caching: false, toolUse: true },
+      })) {
+        // drain
+      }
+
+      const callArgs = vi.mocked(streamText).mock.calls[0]![0];
+      expect(callArgs.providerOptions).toBeUndefined();
+    });
+
+    it('falls back to providerType when capabilities not provided', async () => {
+      vi.mocked(streamText).mockReturnValue(
+        createMockStream([]) as any,
+      );
+
+      for await (const _event of runAgent({
+        model: {} as any,
+        systemPrompt: 'test',
+        messages: [],
+        tools: {},
+        thinking: { enabled: true, budgetTokens: 10000 },
+        providerType: 'anthropic',
+        // no capabilities
+      })) {
+        // drain
+      }
+
+      const callArgs = vi.mocked(streamText).mock.calls[0]![0];
+      expect(callArgs.providerOptions).toEqual({
+        anthropic: {
+          thinking: { type: 'enabled', budgetTokens: 10000 },
+          cacheControl: { type: 'ephemeral' },
+        },
+      });
+    });
+  });
+
+  it('truncates messages when exceeding context hard limit', async () => {
+    // Create messages large enough to exceed DEFAULT_CONTEXT_WINDOW * 0.9
+    // DEFAULT_CONTEXT_WINDOW = 128000, threshold = 115200 tokens ≈ 460800 chars
+    const largeContent = 'x'.repeat(100_000);
+    const messages = Array.from({ length: 10 }, (_, i) => ({
+      role: 'user' as const,
+      content: `${largeContent}-msg${i}`,
+    }));
+
+    vi.mocked(streamText).mockReturnValue(
+      createMockStream([]) as any,
+    );
+
+    const events: AgentEvent[] = [];
+    for await (const event of runAgent({
+      model: {} as any,
+      systemPrompt: 'test',
+      messages: messages as any,
+      tools: {},
+    })) {
+      events.push(event);
+    }
+
+    // streamText should have been called with truncated messages
+    const callArgs = vi.mocked(streamText).mock.calls[0]![0];
+    // Should be trimmed: first message + last 4 (COMPACT_PRESERVE_RECENT)
+    expect(callArgs.messages.length).toBe(5);
+  });
+
   it('ignores unhandled stream part types', async () => {
     vi.mocked(streamText).mockReturnValue(
       createMockStream([

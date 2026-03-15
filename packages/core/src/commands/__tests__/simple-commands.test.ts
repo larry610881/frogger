@@ -99,6 +99,59 @@ describe('costCommand', () => {
     const resultNoCost = costCommand.execute([], withoutCost);
     expect(resultNoCost.message).toContain('N/A');
   });
+
+  it('shows reasoning tokens when present', () => {
+    const ctx = makeContext({
+      sessionUsage: {
+        promptTokens: 1000,
+        completionTokens: 500,
+        totalTokens: 1500,
+        estimatedCost: 0.01,
+        reasoningTokens: 200,
+      },
+    });
+
+    const result = costCommand.execute([], ctx);
+
+    expect(result.message).toContain('Reasoning tokens');
+    expect(result.message).toContain('200');
+  });
+
+  it('shows cache info when cacheReadTokens/cacheCreationTokens present', () => {
+    const ctx = makeContext({
+      sessionUsage: {
+        promptTokens: 1000,
+        completionTokens: 500,
+        totalTokens: 1500,
+        estimatedCost: 0.01,
+        cacheReadTokens: 800,
+        cacheCreationTokens: 150,
+      },
+    });
+
+    const result = costCommand.execute([], ctx);
+
+    expect(result.message).toContain('Cache');
+    expect(result.message).toContain('800');
+    expect(result.message).toContain('150');
+  });
+
+  it('hides cache section when both cache values are zero/undefined', () => {
+    const ctx = makeContext({
+      sessionUsage: {
+        promptTokens: 1000,
+        completionTokens: 500,
+        totalTokens: 1500,
+        estimatedCost: 0.01,
+        cacheReadTokens: 0,
+        cacheCreationTokens: 0,
+      },
+    });
+
+    const result = costCommand.execute([], ctx);
+
+    expect(result.message).not.toContain('Cache');
+  });
 });
 
 // ---------------------------------------------------------------------------

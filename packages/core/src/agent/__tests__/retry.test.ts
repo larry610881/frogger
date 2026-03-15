@@ -128,4 +128,17 @@ describe('sleep', () => {
     await expect(promise).rejects.toThrow();
     vi.useRealTimers();
   });
+
+  it('cleans up abort listener after timer resolves', async () => {
+    vi.useFakeTimers();
+    const controller = new AbortController();
+    const removeSpy = vi.spyOn(controller.signal, 'removeEventListener');
+
+    const promise = sleep(100, controller.signal);
+    vi.advanceTimersByTime(100);
+    await promise;
+
+    expect(removeSpy).toHaveBeenCalledWith('abort', expect.any(Function));
+    vi.useRealTimers();
+  });
 });

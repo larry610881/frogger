@@ -7,6 +7,8 @@ export const gitStatusMetadata: ToolMetadata = {
   name: 'git-status',
   description: 'Show git working tree status',
   permissionLevel: 'auto',
+  category: 'git',
+  hints: 'Check working tree status before commits.',
 };
 
 export function createGitStatusTool(workingDirectory: string) {

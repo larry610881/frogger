@@ -7,6 +7,8 @@ export const gitInitMetadata: ToolMetadata = {
   name: 'git-init',
   description: 'Initialize a new git repository',
   permissionLevel: 'confirm',
+  category: 'git',
+  hints: 'Initialize new repositories.',
 };
 
 export function createGitInitTool(workingDirectory: string) {

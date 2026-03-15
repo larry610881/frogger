@@ -13,6 +13,8 @@ const OPTIONS: { label: string; key: string; response: PermissionResponse; color
   { label: 'Deny', key: 'n', response: 'deny', color: 'red' },
   { label: 'Always allow (project)', key: 'a', response: 'always-project', color: 'blue' },
   { label: 'Always allow (global)', key: 'g', response: 'always-global', color: 'magenta' },
+  { label: 'Always deny (project)', key: 'd', response: 'deny-project', color: 'red' },
+  { label: 'Always deny (global)', key: 'x', response: 'deny-global', color: 'red' },
 ];
 
 export function PermissionPrompt({ toolName, args, onRespond }: PermissionPromptProps): React.ReactElement {

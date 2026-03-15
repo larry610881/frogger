@@ -47,6 +47,9 @@ export { agentMode } from './modes/agent.js';
 // LLM
 export { createProvider, createModel } from './llm/provider.js';
 export { buildSystemPrompt } from './llm/system-prompt.js';
+export type { SystemPromptOptions } from './llm/system-prompt.js';
+export { detectProjectInfo, formatProjectInfo } from './llm/project-detection.js';
+export type { ProjectInfo } from './llm/project-detection.js';
 
 // Tools & Permissions
 export { ToolRegistry, createToolRegistry, type PermissionRequestCallback } from './tools/index.js';
@@ -84,3 +87,5 @@ export { logger, setLogLevel, getLogLevel, type LogLevel } from './utils/logger.
 export { BenchmarkRunner } from './benchmark/runner.js';
 export { getAllTasks, getTask } from './benchmark/tasks/index.js';
 export type { BenchmarkTask, BenchmarkResult, BenchmarkValidation } from './benchmark/types.js';
+export { SWEBenchRunner } from './benchmark/swe-bench.js';
+export type { SWEBenchTask, SWEBenchResult, SWEBenchReport, SWEBenchRunnerOptions } from './benchmark/swe-bench.js';

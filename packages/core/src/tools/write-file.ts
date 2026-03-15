@@ -1,5 +1,6 @@
 import { tool } from 'ai';
 import { z } from 'zod';
+import crypto from 'node:crypto';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { assertWithinBoundary } from './security.js';
@@ -10,6 +11,8 @@ export const writeFileMetadata: ToolMetadata = {
   name: 'write-file',
   description: 'Create or overwrite a file',
   permissionLevel: 'confirm',
+  category: 'write',
+  hints: 'Prefer edit-file for existing files. Use write-file only for new files.',
 };
 
 export function createWriteFileTool(workingDirectory: string) {
@@ -20,6 +23,7 @@ export function createWriteFileTool(workingDirectory: string) {
       content: z.string().describe('File content'),
     }),
     execute: async ({ path: filePath, content }) => {
+      let tmpPath: string | undefined;
       try {
         assertWithinBoundary(filePath, workingDirectory);
         const resolved = path.resolve(workingDirectory, filePath);
@@ -33,7 +37,9 @@ export function createWriteFileTool(workingDirectory: string) {
           // New file — no old content
         }
 
-        await fs.writeFile(resolved, content, 'utf-8');
+        tmpPath = `${resolved}.frogger-tmp-${crypto.randomBytes(4).toString('hex')}`;
+        await fs.writeFile(tmpPath, content, 'utf-8');
+        await fs.rename(tmpPath, resolved);
 
         const diff = generateUnifiedDiff(filePath, oldContent, content);
         if (diff) {
@@ -41,6 +47,9 @@ export function createWriteFileTool(workingDirectory: string) {
         }
         return `File written: ${filePath}`;
       } catch (err) {
+        if (tmpPath) {
+          try { await fs.unlink(tmpPath); } catch { /* already cleaned up */ }
+        }
         const message = err instanceof Error ? err.message : String(err);
         return `Error: ${message}`;
       }

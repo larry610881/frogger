@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -78,5 +78,35 @@ describe('write-file tool', () => {
     expect(result).toContain('File written');
     const content = await fs.readFile(path.join(tmpDir, 'empty.txt'), 'utf-8');
     expect(content).toBe('');
+  });
+
+  it('uses atomic write via temp file and rename', async () => {
+    const writeSpy = vi.spyOn(fs, 'writeFile');
+    const renameSpy = vi.spyOn(fs, 'rename');
+
+    const t = createWriteFileTool(tmpDir);
+    await t.execute!({ path: 'atomic.txt', content: 'atomic content' }, toolCtx);
+
+    // writeFile should be called with a temp path (contains .frogger-tmp-)
+    const writeCall = writeSpy.mock.calls.find(
+      (call) => typeof call[0] === 'string' && (call[0] as string).includes('.frogger-tmp-'),
+    );
+    expect(writeCall).toBeDefined();
+
+    // rename should be called to move temp file to final path
+    const renameCall = renameSpy.mock.calls.find(
+      (call) =>
+        typeof call[0] === 'string' &&
+        (call[0] as string).includes('.frogger-tmp-') &&
+        call[1] === path.join(tmpDir, 'atomic.txt'),
+    );
+    expect(renameCall).toBeDefined();
+
+    // Final file should exist with correct content
+    const content = await fs.readFile(path.join(tmpDir, 'atomic.txt'), 'utf-8');
+    expect(content).toBe('atomic content');
+
+    writeSpy.mockRestore();
+    renameSpy.mockRestore();
   });
 });

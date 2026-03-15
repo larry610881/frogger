@@ -16,6 +16,8 @@ export const webSearchMetadata: ToolMetadata = {
   name: 'web-search',
   description: 'Search the web for current information. Returns titles, URLs, and snippets.',
   permissionLevel: 'auto',
+  category: 'search',
+  hints: 'Search for API docs, error messages, and latest information.',
 };
 
 export class TavilySearchProvider implements SearchProvider {

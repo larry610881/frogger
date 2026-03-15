@@ -36,4 +36,36 @@ describe('glob tool', () => {
     expect(files).toContain('a.ts');
     expect(files).toContain('sub/d.ts');
   });
+
+  describe('cwd boundary check', () => {
+    it('rejects cwd path traversal via ../', async () => {
+      const t = createGlobTool(tmpDir);
+      const result = await t.execute!(
+        { pattern: '*', cwd: '../../' },
+        { toolCallId: '1', messages: [] },
+      );
+      expect(result).toContain('Error');
+      expect(result).toContain('escapes');
+    });
+
+    it('rejects absolute cwd outside boundary', async () => {
+      const t = createGlobTool(tmpDir);
+      const result = await t.execute!(
+        { pattern: '*', cwd: '/etc' },
+        { toolCallId: '1', messages: [] },
+      );
+      expect(result).toContain('Error');
+      expect(result).toContain('escapes');
+    });
+
+    it('allows cwd within working directory', async () => {
+      const t = createGlobTool(tmpDir);
+      const result = await t.execute!(
+        { pattern: '*.ts', cwd: 'sub' },
+        { toolCallId: '1', messages: [] },
+      );
+      const files = JSON.parse(result as string);
+      expect(files).toContain('d.ts');
+    });
+  });
 });

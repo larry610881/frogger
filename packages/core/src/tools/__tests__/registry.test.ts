@@ -117,6 +117,74 @@ describe('ToolRegistry', () => {
   });
 });
 
+describe('getToolHints', () => {
+  it('returns categorized markdown format', () => {
+    const registry = new ToolRegistry();
+    registry.register('read-file', makeDummyTool('read'), {
+      name: 'read-file',
+      description: 'Read a file',
+      permissionLevel: 'auto',
+      category: 'read',
+      hints: 'Read files before editing.',
+    });
+    registry.register('write-file', makeDummyTool('write'), {
+      name: 'write-file',
+      description: 'Write a file',
+      permissionLevel: 'confirm',
+      category: 'write',
+      hints: 'Use only for new files.',
+    });
+
+    const hints = registry.getToolHints();
+    expect(hints).toContain('## Tool Usage Guide');
+    expect(hints).toContain('### Reading');
+    expect(hints).toContain('**read-file**: Read files before editing.');
+    expect(hints).toContain('### Writing');
+    expect(hints).toContain('**write-file**: Use only for new files.');
+  });
+
+  it('returns empty string for empty registry', () => {
+    const registry = new ToolRegistry();
+    expect(registry.getToolHints()).toBe('');
+  });
+
+  it('skips tools without hints or category', () => {
+    const registry = new ToolRegistry();
+    registry.register('test', makeDummyTool('test'), {
+      name: 'test',
+      description: 'test',
+      permissionLevel: 'auto',
+      // no hints or category
+    });
+
+    expect(registry.getToolHints()).toBe('');
+  });
+
+  it('groups tools by category in correct order', () => {
+    const registry = new ToolRegistry();
+    registry.register('bash', makeDummyTool('bash'), {
+      name: 'bash',
+      description: 'bash',
+      permissionLevel: 'confirm',
+      category: 'system',
+      hints: 'System tool.',
+    });
+    registry.register('read-file', makeDummyTool('read'), {
+      name: 'read-file',
+      description: 'read',
+      permissionLevel: 'auto',
+      category: 'read',
+      hints: 'Read tool.',
+    });
+
+    const hints = registry.getToolHints();
+    // Reading section should come before System section
+    const readIndex = hints.indexOf('### Reading');
+    const systemIndex = hints.indexOf('### System');
+    expect(readIndex).toBeLessThan(systemIndex);
+  });
+});
+
 describe('getToolsWithPermission', () => {
   let registry: ToolRegistry;
   const dummyCallback = vi.fn();
@@ -370,6 +438,64 @@ describe('getToolsWithPermission', () => {
     expect(result).toBe('result');
     expect(onBeforeExecute).toHaveBeenCalledWith('write-file', { input: 'test' });
     expect(callOrder).toEqual(['beforeExecute', 'execute']);
+  });
+
+  it('deny-project response saves deny rule to project permissions', async () => {
+    dummyCallback.mockResolvedValue('deny-project');
+    mockBuildPermissionRule.mockReturnValue('write-file');
+
+    registry.register('write-file', makeDummyTool('write'), {
+      name: 'write-file',
+      description: 'write',
+      permissionLevel: 'confirm',
+    });
+
+    const tools = registry.getToolsWithPermission(
+      ['write-file'],
+      'confirm-writes',
+      dummyCallback,
+      '/tmp/test-project',
+    );
+
+    const wrapped = tools['write-file'] as unknown as { execute: (args: Record<string, unknown>, opts: Record<string, unknown>) => Promise<string> };
+    const result = await wrapped.execute({ input: 'data' }, {});
+
+    expect(result).toBe('Tool execution denied by user (saved to project rules).');
+    expect(mockBuildPermissionRule).toHaveBeenCalledWith('write-file', { input: 'data' });
+    expect(mockSavePermissionRule).toHaveBeenCalledWith(
+      '/tmp/test-project/.frogger/permissions.json',
+      'deny',
+      'write-file',
+    );
+  });
+
+  it('deny-global response saves deny rule to global permissions', async () => {
+    dummyCallback.mockResolvedValue('deny-global');
+    mockBuildPermissionRule.mockReturnValue('write-file');
+
+    registry.register('write-file', makeDummyTool('write'), {
+      name: 'write-file',
+      description: 'write',
+      permissionLevel: 'confirm',
+    });
+
+    const tools = registry.getToolsWithPermission(
+      ['write-file'],
+      'confirm-writes',
+      dummyCallback,
+      '/tmp/test-project',
+    );
+
+    const wrapped = tools['write-file'] as unknown as { execute: (args: Record<string, unknown>, opts: Record<string, unknown>) => Promise<string> };
+    const result = await wrapped.execute({ input: 'data' }, {});
+
+    expect(result).toBe('Tool execution denied by user (saved to global rules).');
+    expect(mockBuildPermissionRule).toHaveBeenCalledWith('write-file', { input: 'data' });
+    expect(mockSavePermissionRule).toHaveBeenCalledWith(
+      '/tmp/global/.frogger/permissions.json',
+      'deny',
+      'write-file',
+    );
   });
 
   it('multiple tools wrapped independently', async () => {

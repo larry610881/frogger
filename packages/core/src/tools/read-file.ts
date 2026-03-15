@@ -10,6 +10,8 @@ export const readFileMetadata: ToolMetadata = {
   description:
     'Read the contents of a file. Supports optional offset (0-based line number) and limit (max lines) to read a specific range.',
   permissionLevel: 'auto',
+  category: 'read',
+  hints: 'Read files before editing. Use offset/limit for large files.',
 };
 
 export function createReadFileTool(workingDirectory: string) {
@@ -61,6 +63,10 @@ export function createReadFileTool(workingDirectory: string) {
         return `${header}\n${numbered.join('\n')}`;
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
+        const isNotFound = err instanceof Error && 'code' in err && (err as NodeJS.ErrnoException).code === 'ENOENT';
+        if (isNotFound) {
+          return `Error: ${message}\nHint: Use glob to search for files matching this name pattern.`;
+        }
         return `Error: ${message}`;
       }
     },

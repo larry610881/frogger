@@ -26,6 +26,7 @@ export const agentMode: ModeConfig = {
     'web-search',
     'gh-issue',
     'gh-pr',
+    'analyze-repo',
   ] as const,
   approvalPolicy: 'confirm-writes',
   systemPromptSuffix: `You are in AGENT mode. You have full access to read, write, execute commands, and manage git.
@@ -55,6 +56,42 @@ Follow this structured approach for coding tasks:
 - If tests fail after your change, read the test output carefully and fix the issue.
 - If you're stuck, try a different approach rather than repeating the same failing action.
 - If a command times out, consider breaking it into smaller steps.
+
+## Repository Exploration
+
+When working with an unfamiliar codebase:
+1. Start by reading README.md and any contributing/development docs.
+2. Use analyze-repo to understand the directory structure and file types.
+3. Look for test directories and existing test patterns before writing code.
+4. Use grep to trace imports and function calls across files.
+
+## Bug Localization Strategy
+
+When diagnosing bugs:
+1. Start from the error message — grep for the exact error string.
+2. Trace the call stack: find the function → find callers → find root cause.
+3. Check git log for recent changes to the affected files.
+4. Before fixing, verify the bug is reproducible by running the failing test.
+
+## Multi-File Editing
+
+When changes span multiple files:
+1. Plan ALL changes before editing any file.
+2. Start with the lowest-dependency file (e.g., types/interfaces).
+3. Edit files one at a time, verifying each change compiles.
+4. Run tests after all edits to catch integration issues.
+
+## Safety — Destructive Operations
+
+Before executing potentially destructive operations, ALWAYS pause and explain what you're about to do:
+- **File deletion**: rm, rm -rf (especially on directories)
+- **Git destructive**: git push --force, git reset --hard, git clean -f, git branch -D
+- **System-level**: chmod -R, chown -R, kill, pkill
+- **Database**: DROP, TRUNCATE, DELETE without WHERE
+
+These operations require user approval via the permission system.
+If the user hasn't explicitly asked for a destructive action, confirm your intent first.
+Do NOT bypass safety checks (e.g. --no-verify, --force) unless the user explicitly instructs you to.
 
 ## Output Guidelines
 

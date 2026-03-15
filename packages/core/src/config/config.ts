@@ -4,8 +4,8 @@ import { homedir } from 'node:os';
 import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import { PROJECT_FILE, DEFAULT_MODEL, DEFAULT_PROVIDER, CONFIG_DIR, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_OUTPUT_TOKENS } from '@frogger/shared';
-import type { ProviderEntry, ModelInfo } from '@frogger/shared';
-import { DEFAULT_PROVIDERS } from '@frogger/shared';
+import type { ProviderEntry, ModelInfo, ApprovalPolicy } from '@frogger/shared';
+import { DEFAULT_PROVIDERS, resolveCapabilities } from '@frogger/shared';
 import { logger } from '../utils/logger.js';
 
 // ---------------------------------------------------------------------------
@@ -26,6 +26,12 @@ const providerEntrySchema = z.object({
   envKey: z.string(),
   models: z.array(modelInfoSchema),
   defaultModel: z.string(),
+  capabilities: z.object({
+    vision: z.boolean().optional(),
+    thinking: z.boolean().optional(),
+    caching: z.boolean().optional(),
+    toolUse: z.boolean().optional(),
+  }).optional(),
 });
 
 const providersSchema = z.array(providerEntrySchema);
@@ -46,6 +52,7 @@ export interface FroggerConfig {
   apiKey?: string;
   thinking?: ThinkingConfig;
   notifications?: NotificationsConfig;
+  approvalPolicy?: ApprovalPolicy;
 }
 
 /** Shape of ~/.frogger/config.json */
@@ -61,6 +68,7 @@ interface ConfigFile {
     enabled?: boolean;
     minDurationMs?: number;
   };
+  approvalPolicy?: 'auto' | 'confirm-writes' | 'confirm-all';
 }
 
 function getConfigDir(): string {
@@ -197,6 +205,7 @@ export function loadConfig(options?: {
   model?: string;
   thinking?: boolean;
   notify?: boolean;
+  approvalPolicy?: ApprovalPolicy;
 }): FroggerConfig {
   const fileConfig = readConfigFile();
 
@@ -246,6 +255,15 @@ export function loadConfig(options?: {
     };
   }
 
+  // Validate thinking support: warn and disable if provider doesn't support it
+  if (thinking?.enabled && entry) {
+    const caps = resolveCapabilities(entry);
+    if (!caps.thinking) {
+      logger.warn(`Provider "${providerName}" does not support thinking — disabling.`);
+      thinking = undefined;
+    }
+  }
+
   // Notifications config: CLI flag > config file > default enabled
   let notifications: NotificationsConfig | undefined;
   if (options?.notify === true) {
@@ -259,8 +277,15 @@ export function loadConfig(options?: {
     notifications = { enabled: true, minDurationMs: fileConfig.notifications?.minDurationMs };
   }
 
+  // Approval policy: CLI args > config file > undefined (use mode default)
+  const approvalPolicy = (
+    options?.approvalPolicy
+    ?? fileConfig.approvalPolicy as ApprovalPolicy | undefined
+    ?? undefined
+  );
+
   logger.debug(`Config loaded — provider=${providerName}, model=${model}, apiKey=${apiKey ? 'set' : 'unset'}, thinking=${thinking?.enabled ?? false}`);
-  return { provider: providerName, model, apiKey, thinking, notifications };
+  return { provider: providerName, model, apiKey, thinking, notifications, approvalPolicy };
 }
 
 export async function saveConfig(config: ConfigFile): Promise<string> {
