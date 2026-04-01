@@ -1,6 +1,6 @@
 # Frogger 功能清單
 
-> 版本：v0.11.0 | 更新日期：2026-03-15
+> 版本：v0.12.0 | 更新日期：2026-03-30
 
 ---
 
@@ -24,12 +24,13 @@
 
 三種模式，循環順序：ask → plan → agent → ask。
 
-- **ask 模式** — 唯讀模式，僅允許讀取類工具（read-file、glob、grep、list-files、web-search、analyze-repo）
+- **ask 模式** — 唯讀模式，僅允許讀取類工具（read-file、glob、grep、list-files、web-search、analyze-repo、switch-mode）
 - **plan 模式** — 探索模式，分析程式碼後產出高階計畫；禁止寫入；計畫完成後自動切換至 agent 模式執行；可使用 web-search、analyze-repo
-- **agent 模式** — 完整存取，可使用全部 23 個工具（含 save-memory、web-search、gh-issue、gh-pr、analyze-repo）；寫入操作需使用者確認
+- **agent 模式** — 完整存取，可使用全部 24 個工具（含 save-memory、web-search、gh-issue、gh-pr、analyze-repo、switch-mode）；寫入操作需使用者確認
+- **LLM 驅動模式切換** — LLM 可透過 `switch-mode` tool 自動判斷並切換模式；升權（ask→agent）需使用者確認，降權（agent→plan）直接切換；參考 Claude Code 的 EnterPlanMode 設計
 - **ModeManager** — 提供 `getCurrentMode()`、`setMode()`、`cycle()` 方法管理模式狀態；支援 `policyOverride` 參數覆蓋 mode 預設的 `approvalPolicy`
 
-### Tool System（23 tools）
+### Tool System（24 tools）
 
 #### 檔案系統 — 讀取（permission: auto）
 
@@ -77,10 +78,16 @@
 - **gh-issue**（permission: auto） — 讀取 GitHub issue 詳情（title、body、labels、assignees、comments），支援 `--repo` 指定跨 repo 查詢
 - **gh-pr**（permission: confirm） — 建立 GitHub pull request，支援 title、body、base branch、head branch、draft、labels；使用 `execa` 陣列參數形式傳遞，防止 shell injection
 
+#### 模式切換（permission: auto）
+
+- **switch-mode** — LLM 驅動的自動模式切換；接受 `targetMode`（plan/agent）和 `reason` 參數；升權（ask→agent）需使用者確認，降權（agent→plan）直接切換；ask 和 agent 模式可用，plan 模式不可用（已有 auto-execute）
+
 #### 工具基礎架構
 
 - **ToolRegistry** — 集中式工具註冊表，支援按模式篩選工具，支援 `onBeforeExecute` / `onAfterExecute` hook 在工具執行前後觸發回調；`getToolHints()` 方法依 category 分組產出 Markdown 格式的工具使用指南，注入 system prompt 輔助 LLM 選擇工具
-- **Tool Hints & Category** — 每個工具的 `ToolMetadata` 包含 `hints`（使用建議）和 `category`（分類標籤：read/write/search/git/test/github/system），用於 system prompt 的工具指南區塊
+- **ReadWriteLock 並行控制** — 讀取類 tool（permissionLevel: auto）使用 shared lock 並行執行（最多 10 個），寫入類 tool（permissionLevel: confirm）使用 exclusive lock 串行執行；Writer 優先防止飢餓；支援 AbortSignal 取消等待；修復 Vercel AI SDK `Promise.all()` 導致的寫入競態問題
+- **Audit Log** — 企業級工具執行審計日誌；每次 tool 執行自動記錄至 `~/.frogger/audit/YYYY-MM-DD.jsonl`（JSONL 格式，日期自動輪轉）；記錄 tool 名稱、參數、結果、耗時、模式、provider/model；fire-and-forget 不阻斷 tool 執行；支援未來 POST 到遠端 endpoint（config `audit.endpoint`）；`/audit` 指令顯示今日摘要，`/audit tail` 顯示最近 N 筆，`/audit files` 列出 log 檔案
+- **Tool Hints & Category** — 每個工具的 `ToolMetadata` 包含 `hints`（使用建議）和 `category`（分類標籤：read/write/search/git/test/github/system/mode），用於 system prompt 的工具指南區塊
 - **Hooks System** — 透過 `.frogger/hooks.json`（專案級）或 `~/.frogger/hooks.json`（全域級）設定 PreToolUse / PostToolUse shell hooks；支援 `*`（全部）、精確匹配、前綴匹配（`git-*`）三種 matcher；環境變數注入 `FROGGER_TOOL_NAME`、`FROGGER_TOOL_ARGS`、`FROGGER_TOOL_RESULT`（自動截斷至 `MAX_TOOL_RESULT_SIZE` 100KB，防止超過 shell 128KB 環境變數限制）、`FROGGER_HOOK_TYPE`、`FROGGER_WORKING_DIR`；PreToolUse 失敗阻斷工具執行，PostToolUse 失敗僅警告；預設 timeout 10 秒，最大 60 秒；全域 hooks 先觸發、專案 hooks 後觸發；專案級 hooks.json 首次載入需使用者確認（SHA-256 hash 追蹤，內容變更後需重新確認），防止惡意 repo 植入
 - **路徑安全防護** — `assertWithinBoundary()` 防止路徑穿越攻擊（涵蓋 read-file、write-file、edit-file、glob、grep、list-files）
 - **Bash 封鎖清單** — 正規表達式封鎖危險命令（rm -rf /、fork bomb 等）

@@ -53,9 +53,14 @@ describe('InputBox', () => {
       React.createElement(InputBox, { ...defaultProps, commands }),
     );
     stdin.write('/');
-    // Wait for React re-render after forceUpdate
-    await new Promise(r => setTimeout(r, 50));
-    const frame = lastFrame()!;
+    // Poll for React re-render instead of fixed timeout
+    const deadline = Date.now() + 2000;
+    let frame = '';
+    while (Date.now() < deadline) {
+      frame = lastFrame() ?? '';
+      if (frame.includes('/help')) break;
+      await new Promise(r => setTimeout(r, 20));
+    }
     expect(frame).toContain('/help');
     expect(frame).toContain('/clear');
   });

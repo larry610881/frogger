@@ -22,8 +22,10 @@ import { createWebSearchTool, webSearchMetadata } from './web-search.js';
 import { createGhIssueTool, ghIssueMetadata } from './gh-issue.js';
 import { createGhPrTool, ghPrMetadata } from './gh-pr.js';
 import { createAnalyzeRepoTool, analyzeRepoMetadata } from './analyze-repo.js';
+import { createSwitchModeTool, switchModeMetadata } from './switch-mode.js';
 
 export { ToolRegistry, type PermissionRequestCallback } from './registry.js';
+export { ReadWriteLock } from './concurrency.js';
 export { assertWithinBoundary } from './security.js';
 export { createReadFileTool, readFileMetadata } from './read-file.js';
 export { createGlobTool, globMetadata } from './glob.js';
@@ -49,6 +51,7 @@ export type { SearchProvider, SearchResult } from './web-search.js';
 export { createGhIssueTool, ghIssueMetadata } from './gh-issue.js';
 export { createGhPrTool, ghPrMetadata } from './gh-pr.js';
 export { createAnalyzeRepoTool, analyzeRepoMetadata } from './analyze-repo.js';
+export { createSwitchModeTool, switchModeMetadata, SWITCH_MODE_SENTINEL } from './switch-mode.js';
 export {
   detectGitAuthStatus, resolveGitAuthEnv, resolveGitAuthEnvForUrl,
   loadGitCredentials, saveGitCredentials, extractHostFromRemoteUrl, filterSensitiveOutput,
@@ -81,6 +84,7 @@ export function createToolRegistry(workingDirectory: string): ToolRegistry {
   registry.register('gh-issue', createGhIssueTool(workingDirectory), ghIssueMetadata);
   registry.register('gh-pr', createGhPrTool(workingDirectory), ghPrMetadata);
   registry.register('analyze-repo', createAnalyzeRepoTool(workingDirectory), analyzeRepoMetadata);
+  registry.register('switch-mode', createSwitchModeTool(), switchModeMetadata);
 
   return registry;
 }

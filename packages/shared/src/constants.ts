@@ -4,6 +4,7 @@ export const APP_VERSION: string =
   typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '0.1.9';
 export const APP_NAME = 'frogger';
 export const CONFIG_DIR = '.frogger';
+export const AUDIT_DIR = 'audit';
 export const PROJECT_FILE = 'FROGGER.md';
 export const MAX_STEPS = 50;
 export const DEFAULT_MODEL = 'deepseek-chat';

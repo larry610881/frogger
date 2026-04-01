@@ -55,6 +55,14 @@ export function useAgent(options: UseAgentOptions) {
   const sessionCacheCreationTokensRef = useRef(0);
   // Queue for auto-execute after plan mode
   const autoExecuteRef = useRef<string | null>(null);
+  // Queue for LLM-initiated mode switch
+  const modeSwitchRef = useRef<{ target: ModeName; reason: string; from: ModeName } | null>(null);
+  const modeSwitchArgsRef = useRef<{ targetMode: string; reason: string } | null>(null);
+  const [pendingModeSwitch, setPendingModeSwitch] = useState<{
+    target: ModeName;
+    reason: string;
+    resolve: (confirmed: boolean) => void;
+  } | null>(null);
   // MCP client manager — persists across turns, cleaned up on unmount
   const mcpClientManagerRef = useRef<{ closeAll(): Promise<void> } | null>(null);
   const modeRef = useRef(options.mode);
@@ -167,6 +175,11 @@ export function useAgent(options: UseAgentOptions) {
         permissionCallback,
         existingCheckpointManager: checkpointManagerRef.current!,
         getMessageCount: () => messagesRef.current.length,
+        audit: config.audit,
+        modeName: activeMode,
+        providerName: config.provider,
+        modelName: config.model,
+        sessionId: sessionIdRef.current ?? undefined,
       });
 
       const systemPrompt = buildSystemPrompt({ modeConfig, workingDirectory, projectContext, repoMap, rules, memory, toolHints, projectInfo });
@@ -213,11 +226,31 @@ export function useAgent(options: UseAgentOptions) {
               currentText = '';
               setStreamingText('');
             }
+            // Cache switch-mode args for use in tool_result handler
+            if (event.toolName === 'switch-mode') {
+              modeSwitchArgsRef.current = event.args as { targetMode: string; reason: string };
+            }
             setPendingToolCall({ toolName: event.toolName, args: event.args });
             break;
           }
 
           case 'tool_result': {
+            // Intercept switch-mode tool result to trigger mode transition
+            if (event.toolName === 'switch-mode' && modeSwitchArgsRef.current) {
+              const { targetMode, reason } = modeSwitchArgsRef.current;
+              modeSwitchArgsRef.current = null;
+              modeSwitchRef.current = { target: targetMode as ModeName, reason, from: activeMode };
+
+              // Preserve any accumulated text in message history
+              if (fullText) {
+                messagesRef.current.push({ role: 'assistant', content: fullText });
+              }
+
+              setPendingToolCall(null);
+              abortController.abort();
+              break;
+            }
+
             const summary = formatToolSummary(event.toolName, pendingToolCall?.args ?? {}, event.result);
             options.onMessage({
               id: `tool-${Date.now()}`,
@@ -305,12 +338,22 @@ export function useAgent(options: UseAgentOptions) {
         autoExecuteRef.current = fullText.trim();
       }
     } catch (err) {
-      const errorMsg = err instanceof Error ? err.message : String(err);
-      options.onMessage({
-        id: Date.now().toString(),
-        role: 'assistant',
-        content: `Error: ${errorMsg}`,
-      });
+      // Silence abort errors triggered by mode switch — handled in finally block
+      const isModeSwitchAbort = modeSwitchRef.current && err instanceof Error && err.name === 'AbortError';
+      if (!isModeSwitchAbort) {
+        const errorMsg = err instanceof Error ? err.message : String(err);
+        const isQuotaExceeded = /429|rate.?limit|too many requests|quota|budget/i.test(errorMsg)
+          || ((err as Record<string, unknown>)?.statusCode === 429)
+          || ((err as Record<string, unknown>)?.status === 429);
+        const displayMsg = isQuotaExceeded
+          ? 'API quota exceeded — your token budget may have been reached. Contact your IT administrator or check your API plan.'
+          : `Error: ${errorMsg}`;
+        options.onMessage({
+          id: Date.now().toString(),
+          role: 'assistant',
+          content: displayMsg,
+        });
+      }
     } finally {
       setIsStreaming(false);
       setStreamingText('');
@@ -342,6 +385,50 @@ export function useAgent(options: UseAgentOptions) {
         await submitInternal(
           `Execute the plan above. Here is the plan for reference:\n\n${planText}`,
           'agent',
+        );
+      }
+
+      // Handle LLM-initiated mode switch
+      if (modeSwitchRef.current) {
+        const { target, reason, from } = modeSwitchRef.current;
+        modeSwitchRef.current = null;
+
+        const isUpgrade = from === 'ask' && target === 'agent';
+
+        if (isUpgrade) {
+          // Need user confirmation for permission upgrade (ask → agent)
+          const confirmed = await new Promise<boolean>((resolve) => {
+            setPendingModeSwitch({ target, reason, resolve });
+          });
+          setPendingModeSwitch(null);
+
+          if (!confirmed) {
+            options.onMessage({
+              id: `mode-denied-${Date.now()}`,
+              role: 'tool',
+              content: `Mode switch to ${target} was denied by user.`,
+            });
+            messagesRef.current.push({
+              role: 'user',
+              content: `Mode switch to ${target} was denied. Continue in ${from} mode.`,
+            });
+            return;
+          }
+        }
+
+        // Perform the switch
+        options.onModeChange?.(target);
+        options.onMessage({
+          id: `mode-switch-${Date.now()}`,
+          role: 'tool',
+          content: `🔄 Switching to ${target.charAt(0).toUpperCase() + target.slice(1)} mode — ${reason}`,
+        });
+
+        // Small delay to let mode state propagate
+        await new Promise(r => setTimeout(r, 50));
+        await submitInternal(
+          `Continue the task. You have been switched from ${from} mode to ${target} mode. Reason: ${reason}`,
+          target,
         );
       }
     }
@@ -443,5 +530,11 @@ export function useAgent(options: UseAgentOptions) {
     }
   }, [pendingPermission]);
 
-  return { isStreaming, streamingText, thinkingText, liveUsage, pendingToolCall, pendingPermission, contextBudget, commandHints: COMMAND_HINTS, submit, respondPermission };
+  const respondModeSwitch = useCallback((confirmed: boolean) => {
+    if (pendingModeSwitch) {
+      pendingModeSwitch.resolve(confirmed);
+    }
+  }, [pendingModeSwitch]);
+
+  return { isStreaming, streamingText, thinkingText, liveUsage, pendingToolCall, pendingPermission, pendingModeSwitch, contextBudget, commandHints: COMMAND_HINTS, submit, respondPermission, respondModeSwitch };
 }

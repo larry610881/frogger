@@ -75,7 +75,7 @@ export class SessionManager {
     }
   }
 
-  async list(limit = 10): Promise<SessionData[]> {
+  async list(limit = 10, options?: { workingDirectory?: string }): Promise<SessionData[]> {
     await this.ensureDir();
 
     try {
@@ -83,14 +83,18 @@ export class SessionManager {
       const jsonFiles = files
         .filter(f => f.endsWith('.json'))
         .sort()
-        .reverse()
-        .slice(0, limit);
+        .reverse();
 
       const sessions: SessionData[] = [];
       for (const file of jsonFiles) {
+        if (sessions.length >= limit) break;
         try {
           const content = await fs.readFile(path.join(SESSIONS_DIR, file), 'utf-8');
-          sessions.push(JSON.parse(content) as SessionData);
+          const session = JSON.parse(content) as SessionData;
+          if (options?.workingDirectory && session.workingDirectory !== options.workingDirectory) {
+            continue;
+          }
+          sessions.push(session);
         } catch {
           // Skip corrupt files
         }

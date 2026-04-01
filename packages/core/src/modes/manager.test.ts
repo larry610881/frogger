@@ -50,6 +50,7 @@ describe('ModeManager', () => {
       'test-runner',
       'web-search',
       'analyze-repo',
+      'switch-mode',
     ]);
 
     manager.setMode('agent');
@@ -77,7 +78,21 @@ describe('ModeManager', () => {
       'gh-issue',
       'gh-pr',
       'analyze-repo',
+      'switch-mode',
     ]);
+  });
+
+  it('switch-mode is available in ask and agent but not plan', () => {
+    const manager = new ModeManager();
+
+    manager.setMode('ask');
+    expect(manager.getCurrentMode().allowedTools).toContain('switch-mode');
+
+    manager.setMode('agent');
+    expect(manager.getCurrentMode().allowedTools).toContain('switch-mode');
+
+    manager.setMode('plan');
+    expect(manager.getCurrentMode().allowedTools).not.toContain('switch-mode');
   });
 
   it('returns correct approvalPolicy for each mode', () => {

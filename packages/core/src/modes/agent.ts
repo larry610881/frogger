@@ -27,6 +27,7 @@ export const agentMode: ModeConfig = {
     'gh-issue',
     'gh-pr',
     'analyze-repo',
+    'switch-mode',
   ] as const,
   approvalPolicy: 'confirm-writes',
   systemPromptSuffix: `You are in AGENT mode. You have full access to read, write, execute commands, and manage git.
@@ -92,6 +93,11 @@ Before executing potentially destructive operations, ALWAYS pause and explain wh
 These operations require user approval via the permission system.
 If the user hasn't explicitly asked for a destructive action, confirm your intent first.
 Do NOT bypass safety checks (e.g. --no-verify, --force) unless the user explicitly instructs you to.
+
+## Mode Switching
+
+If you determine the task is complex and would benefit from architectural planning before implementation, use the switch-mode tool to transition to plan mode first.
+Do NOT switch to plan mode for straightforward tasks — just execute them directly.
 
 ## Output Guidelines
 

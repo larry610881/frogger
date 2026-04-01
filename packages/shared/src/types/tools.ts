@@ -2,7 +2,7 @@ export type PermissionLevel = 'auto' | 'confirm';
 
 export type PermissionResponse = 'allow' | 'deny' | 'always-project' | 'always-global' | 'deny-project' | 'deny-global';
 
-export type ToolCategory = 'read' | 'write' | 'search' | 'git' | 'test' | 'github' | 'system';
+export type ToolCategory = 'read' | 'write' | 'search' | 'git' | 'test' | 'github' | 'system' | 'mode';
 
 export interface ToolMetadata {
   name: string;

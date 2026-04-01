@@ -1,6 +1,7 @@
 # Architecture Journal
 
 ## Table of Contents
+- [2026-03-30: LLM-Driven Automatic Mode Switching (switch-mode tool)](#2026-03-30-llm-driven-automatic-mode-switching-switch-mode-tool)
 - [2026-03-15: v0.11.0 SWE-bench Competitiveness + System Stability Sprint](#2026-03-15-v0110-swe-bench-competitiveness--system-stability-sprint)
 - [2026-03-13: Permission System Enhancement — System Prompt Safety + Always-Deny + Policy Override](#2026-03-13-permission-system-enhancement--system-prompt-safety--always-deny--policy-override)
 - [2026-03-13: v0.9.0 穩定性優先 — 測試覆蓋 + Deprecated 清理 + Flaky 修復](#2026-03-13-v090-穩定性優先--測試覆蓋--deprecated-清理--flaky-修復)
@@ -25,6 +26,27 @@
 - [2026-03-09: P1 Feature Batch — Permission, Git, Diff, Session, Markdown](#2026-03-09-p1-feature-batch--permission-git-diff-session-markdown)
 - [2026-03-08: Dynamic Provider Registry + Agent Benchmark](#2026-03-08-dynamic-provider-registry--agent-benchmark)
 <!-- New entries are inserted below -->
+
+---
+
+### 2026-03-30: LLM-Driven Automatic Mode Switching (switch-mode tool)
+
+**來源**：feat(core): 新增 switch-mode tool，讓 LLM 自動判斷並切換 ask/plan/agent 模式
+**主題**：Tool-as-Control-Flow Pattern、Permission Escalation UX
+
+#### 做得好的地方
+- **Tool-as-Control-Flow**：參考 Claude Code 的 EnterPlanMode 設計，將模式切換包裝成 tool 而非獨立的 intent classifier。LLM 本身就是最好的 intent detector，不需額外分類器。
+- **升權確認 / 降權直轉**：安全原則清晰 — ask→agent 需使用者按 Y 確認（權限提升），agent→plan 直接切換（權限降級無風險）。
+- **Sentinel Pattern**：tool 回傳 sentinel string，CLI 層攔截 toolName + cached args 觸發流程，避免修改 mode-agnostic 的 agent loop。
+- **UI 一致性**：ModeSwitchPrompt 與 PermissionPrompt 共用相同的 border style + keybinding pattern。
+
+#### 潛在隱憂
+- **Abort 中斷的 partial state** — 當 switch-mode 觸發 abort 時，任何 in-flight 的 tool call 會被丟棄。若 LLM 在同一輪先呼叫了其他 tool 再呼叫 switch-mode，前面 tool 的結果已經顯示但不在新模式的 context 中。→ 目前用 `fullText` push 到 messagesRef 緩解，但 tool results 的完整性需觀察。優先級：中
+- **LLM 過度切換** — 如果 system prompt 引導不夠精確，LLM 可能對每個稍微複雜的問題都觸發 switch-mode，造成 UX 噪音。→ 可加入 cooldown 或 session-level 計數器。優先級：低
+
+#### 延伸學習
+- **Tool-as-Control-Flow Pattern**：將 agent 的 meta 行為（模式切換、計畫審批、記憶儲存）包裝成 tool，讓 LLM 透過 native function calling 控制 agent 行為，而非用 XML tags 或 regex 解析。Claude Code、Roo Code 都採用此模式。
+- 若想深入：搜尋「LLM agent tool use for control flow」、「agentic tool calling patterns」
 
 ---
 

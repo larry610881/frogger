@@ -1,6 +1,7 @@
 import type { Tool } from 'ai';
-import type { ApprovalPolicy } from '@frogger/shared';
+import type { ApprovalPolicy, AuditConfig, AuditEvent } from '@frogger/shared';
 import { createToolRegistry, type PermissionRequestCallback } from '../tools/index.js';
+import { AuditLogger } from '../audit/index.js';
 import { CheckpointManager } from './checkpoint.js';
 import { getProjectPermissionsPath, loadPermissionRules, type PermissionRulesFile } from '../permission/rules.js';
 import { isPermissionsConfirmed, confirmPermissions } from '../permission/confirmed-permissions.js';
@@ -21,6 +22,14 @@ export interface CreateAgentToolsOptions {
   /** Called when project-level permissions.json is detected but not yet confirmed.
    *  Return true to accept the rules, false to skip them. */
   onProjectPermissionsDetected?: (path: string, rules: PermissionRulesFile) => Promise<boolean>;
+  /** Audit logging config. When enabled, tool executions are logged to JSONL. */
+  audit?: AuditConfig;
+  /** Current mode name for audit context */
+  modeName?: string;
+  /** Provider/model info for audit context */
+  providerName?: string;
+  modelName?: string;
+  sessionId?: string;
 }
 
 export interface AgentToolsResult {
@@ -123,13 +132,45 @@ export async function createAgentTools(
     }
   }
 
+  // Wrap onBeforeExecute/onAfterExecute with audit logging
+  const auditLogger = options.audit?.enabled ? new AuditLogger(options.audit) : null;
+  const toolStartTimes = new Map<string, number>();
+
+  const wrappedOnBeforeExecute = auditLogger
+    ? async (toolName: string, args: Record<string, unknown>) => {
+        toolStartTimes.set(`${toolName}-${JSON.stringify(args).slice(0, 50)}`, performance.now());
+        if (onBeforeExecute) await onBeforeExecute(toolName, args);
+      }
+    : onBeforeExecute;
+
+  const wrappedOnAfterExecute = async (toolName: string, args: Record<string, unknown>, result: string) => {
+    if (onAfterExecute) await onAfterExecute(toolName, args, result);
+    if (auditLogger) {
+      const key = `${toolName}-${JSON.stringify(args).slice(0, 50)}`;
+      const startTime = toolStartTimes.get(key) ?? performance.now();
+      toolStartTimes.delete(key);
+      const event: AuditEvent = {
+        timestamp: new Date().toISOString(),
+        tool: toolName,
+        args,
+        result: result.startsWith('Tool execution denied') ? 'denied' : 'success',
+        durationMs: Math.round(performance.now() - startTime),
+        mode: options.modeName ?? 'agent',
+        sessionId: options.sessionId,
+        provider: options.providerName ?? '',
+        model: options.modelName ?? '',
+      };
+      auditLogger.log(event);
+    }
+  };
+
   const tools = registry.getToolsWithPermission(
     allowedTools,
     policy,
     permissionCallback,
     workingDirectory,
-    onBeforeExecute,
-    onAfterExecute,
+    wrappedOnBeforeExecute,
+    wrappedOnAfterExecute,
   );
 
   // Load and connect MCP servers (dynamic import to avoid breaking tests)

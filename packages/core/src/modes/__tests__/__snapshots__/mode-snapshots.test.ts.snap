@@ -26,6 +26,7 @@ exports[`mode config snapshots > agent mode config 1`] = `
     "gh-issue",
     "gh-pr",
     "analyze-repo",
+    "switch-mode",
   ],
   "approvalPolicy": "confirm-writes",
   "displayName": "Agent",
@@ -94,6 +95,11 @@ These operations require user approval via the permission system.
 If the user hasn't explicitly asked for a destructive action, confirm your intent first.
 Do NOT bypass safety checks (e.g. --no-verify, --force) unless the user explicitly instructs you to.
 
+## Mode Switching
+
+If you determine the task is complex and would benefit from architectural planning before implementation, use the switch-mode tool to transition to plan mode first.
+Do NOT switch to plan mode for straightforward tasks — just execute them directly.
+
 ## Output Guidelines
 
 - Be concise. Lead with the action or answer, not the reasoning.
@@ -112,6 +118,7 @@ exports[`mode config snapshots > ask mode config 1`] = `
     "test-runner",
     "web-search",
     "analyze-repo",
+    "switch-mode",
   ],
   "approvalPolicy": "auto",
   "displayName": "Ask",
@@ -120,7 +127,13 @@ exports[`mode config snapshots > ask mode config 1`] = `
 
 - Use grep and glob to locate relevant code before answering questions.
 - Read files to provide accurate, evidence-based answers rather than guessing.
-- Be concise. Lead with the answer, then provide supporting context if needed.",
+- Be concise. Lead with the answer, then provide supporting context if needed.
+
+## Mode Switching
+
+If the user's request requires code changes, file modifications, or git operations, use the switch-mode tool to transition to agent mode.
+If the user's request requires architectural planning for a complex task, use the switch-mode tool to transition to plan mode.
+Do NOT switch modes for simple questions or code reading tasks — answer them directly.",
 }
 `;
 

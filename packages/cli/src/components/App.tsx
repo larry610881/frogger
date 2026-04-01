@@ -10,6 +10,7 @@ import { ContextUsage } from './ContextUsage.js';
 import { Spinner } from './Spinner.js';
 import { WelcomeBanner, type SessionSummary } from './WelcomeBanner.js';
 import { PermissionPrompt } from './PermissionPrompt.js';
+import { ModeSwitchPrompt } from './ModeSwitchPrompt.js';
 import { InitSetup } from './InitSetup.js';
 import { StreamingStats } from './StreamingStats.js';
 import { ThinkingView } from './ThinkingView.js';
@@ -55,7 +56,7 @@ export function App({ initialPrompt, initialMode, provider, model, thinking, not
     [history],
   );
 
-  const { isStreaming, streamingText, thinkingText, liveUsage, pendingToolCall, pendingPermission, contextBudget, commandHints, submit, respondPermission } = useAgent({
+  const { isStreaming, streamingText, thinkingText, liveUsage, pendingToolCall, pendingPermission, pendingModeSwitch, contextBudget, commandHints, submit, respondPermission, respondModeSwitch } = useAgent({
     provider: activeProvider,
     model: activeModel,
     mode,
@@ -78,7 +79,7 @@ export function App({ initialPrompt, initialMode, provider, model, thinking, not
       try {
         const { SessionManager } = await import('@frogger/core');
         const sm = new SessionManager();
-        const sessions = await sm.list(3);
+        const sessions = await sm.list(3, { workingDirectory: process.cwd() });
         setRecentSessions(sessions.map(s => ({
           timeAgo: formatTimeAgo(s.updatedAt),
           directory: path.basename(s.workingDirectory),
@@ -128,6 +129,14 @@ export function App({ initialPrompt, initialMode, provider, model, thinking, not
           toolName={pendingPermission.toolName}
           args={pendingPermission.args}
           onRespond={respondPermission}
+        />
+      )}
+
+      {pendingModeSwitch && (
+        <ModeSwitchPrompt
+          target={pendingModeSwitch.target}
+          reason={pendingModeSwitch.reason}
+          onRespond={respondModeSwitch}
         />
       )}
 

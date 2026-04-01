@@ -31,7 +31,7 @@ export function useAgentServices(provider: string, model?: string) {
         ContextBudgetTracker, CommandRegistry, findModelInfo,
         clearCommand, compactCommand, compactThresholdCommand, modelCommand, setupCommand,
         undoCommand, sessionsCommand, resumeCommand, gitAuthCommand,
-        costCommand, contextCommand, doctorCommand, createRewindCommand,
+        costCommand, contextCommand, doctorCommand, auditCommand, createRewindCommand,
         loadCustomCommands, mcpCommand, initProjectCommand, rememberCommand, issueCommand,
         bgCommand, tasksCommand, taskCommand, updateCheckCommand,
       } = await import('@frogger/core');
@@ -59,6 +59,7 @@ export function useAgentServices(provider: string, model?: string) {
         registry.register(costCommand);
         registry.register(contextCommand);
         registry.register(doctorCommand);
+        registry.register(auditCommand);
         registry.register(updateCheckCommand);
         registry.register(createRewindCommand(checkpointManagerRef.current!));
         registry.register(mcpCommand);

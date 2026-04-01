@@ -6,6 +6,7 @@ export { resolveFileReferences, isImageFile, type FileReferenceResult, type Imag
 export { CheckpointManager, type Checkpoint, type RestoreResult } from './agent/checkpoint.js';
 export { createAgentTools, type CreateAgentToolsOptions, type AgentToolsResult } from './agent/agent-tools.js';
 export { generateRepoMap, type RepoMapOptions } from './agent/repo-map.js';
+export { AuditLogger } from './audit/index.js';
 export { BackgroundTaskManager, type BackgroundTaskInfo, type BackgroundTaskRunner, type BackgroundTaskStatus } from './agent/background-task.js';
 
 // Context Management
@@ -25,6 +26,7 @@ export { sessionsCommand } from './commands/sessions.js';
 export { resumeCommand } from './commands/resume.js';
 export { gitAuthCommand } from './commands/git-auth.js';
 export { costCommand } from './commands/cost.js';
+export { auditCommand } from './commands/audit.js';
 export { mcpCommand } from './commands/mcp.js';
 export { contextCommand } from './commands/context.js';
 export { doctorCommand } from './commands/doctor.js';
