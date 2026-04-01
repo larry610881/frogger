@@ -66,10 +66,18 @@ describe('AuditLogger', () => {
     logger.log(makeEvent({ tool: 'glob' }));
     logger.log(makeEvent({ tool: 'grep' }));
 
-    await new Promise(r => setTimeout(r, 150));
-
+    // Poll until both lines are written (instead of fixed timeout)
     const date = new Date().toISOString().split('T')[0];
     const logFile = join(testDir, '.frogger', 'audit', `${date}.jsonl`);
+    const deadline = Date.now() + 2000;
+    while (Date.now() < deadline) {
+      if (existsSync(logFile)) {
+        const content = readFileSync(logFile, 'utf-8').trim();
+        if (content.split('\n').length >= 2) break;
+      }
+      await new Promise(r => setTimeout(r, 20));
+    }
+
     const lines = readFileSync(logFile, 'utf-8').trim().split('\n');
     expect(lines).toHaveLength(2);
     expect(JSON.parse(lines[0]!).tool).toBe('glob');

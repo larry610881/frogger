@@ -5,6 +5,7 @@ import { existsSync, readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { z } from 'zod';
 import { PROJECT_FILE, DEFAULT_MODEL, DEFAULT_PROVIDER, CONFIG_DIR, DEFAULT_CONTEXT_WINDOW, DEFAULT_MAX_OUTPUT_TOKENS } from '@frogger/shared';
 import type { ProviderEntry, ModelInfo, ApprovalPolicy, AuditConfig } from '@frogger/shared';
+import type { LogFormat } from '../utils/logger.js';
 import { DEFAULT_PROVIDERS, resolveCapabilities } from '@frogger/shared';
 import { logger } from '../utils/logger.js';
 
@@ -54,6 +55,7 @@ export interface FroggerConfig {
   notifications?: NotificationsConfig;
   approvalPolicy?: ApprovalPolicy;
   audit?: AuditConfig;
+  logFormat?: LogFormat;
 }
 
 /** Shape of ~/.frogger/config.json */
@@ -74,6 +76,7 @@ interface ConfigFile {
     enabled?: boolean;
     endpoint?: string;
   };
+  logFormat?: 'text' | 'json';
 }
 
 function getConfigDir(): string {
@@ -289,14 +292,21 @@ export function loadConfig(options?: {
     ?? undefined
   );
 
+  // Log format: env var > config file > default text
+  const logFormat = (
+    (process.env.FROGGER_LOG_FORMAT as LogFormat | undefined)
+    ?? fileConfig.logFormat as LogFormat | undefined
+    ?? 'text'
+  );
+
   // Audit config: config file > default enabled
   const audit: AuditConfig = {
     enabled: fileConfig.audit?.enabled ?? true,
     endpoint: fileConfig.audit?.endpoint,
   };
 
-  logger.debug(`Config loaded — provider=${providerName}, model=${model}, apiKey=${apiKey ? 'set' : 'unset'}, thinking=${thinking?.enabled ?? false}, audit=${audit.enabled}`);
-  return { provider: providerName, model, apiKey, thinking, notifications, approvalPolicy, audit };
+  logger.debug(`Config loaded — provider=${providerName}, model=${model}, apiKey=${apiKey ? 'set' : 'unset'}, thinking=${thinking?.enabled ?? false}, audit=${audit.enabled}, logFormat=${logFormat}`);
+  return { provider: providerName, model, apiKey, thinking, notifications, approvalPolicy, audit, logFormat };
 }
 
 export async function saveConfig(config: ConfigFile): Promise<string> {

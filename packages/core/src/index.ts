@@ -83,7 +83,7 @@ export {
 } from './mcp/index.js';
 
 // Logger
-export { logger, setLogLevel, getLogLevel, type LogLevel } from './utils/logger.js';
+export { logger, setLogLevel, getLogLevel, setLogFormat, getLogFormat, type LogLevel, type LogFormat } from './utils/logger.js';
 
 // Benchmark
 export { BenchmarkRunner } from './benchmark/runner.js';

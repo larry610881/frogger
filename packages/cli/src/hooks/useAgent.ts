@@ -143,9 +143,10 @@ export function useAgent(options: UseAgentOptions) {
     const taskStart = performance.now();
 
     try {
-      const { runAgent, loadConfig, createModel, ModeManager, buildSystemPrompt, createAgentTools, loadProjectContext, generateRepoMap, loadRules, loadMemory, detectProjectInfo, formatProjectInfo } = await import('@frogger/core');
+      const { runAgent, loadConfig, createModel, ModeManager, buildSystemPrompt, createAgentTools, loadProjectContext, generateRepoMap, loadRules, loadMemory, detectProjectInfo, formatProjectInfo, setLogFormat } = await import('@frogger/core');
 
       const config = loadConfig({ provider: options.provider, model: options.model });
+      if (config.logFormat) setLogFormat(config.logFormat);
       const model = createModel(config.provider, config.model, { apiKey: config.apiKey });
       const providerEntry = lookupProvider(config.provider);
       const modeManager = new ModeManager(activeMode, config.approvalPolicy);

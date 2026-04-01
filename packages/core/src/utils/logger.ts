@@ -1,4 +1,5 @@
 export type LogLevel = 'debug' | 'info' | 'warn' | 'error';
+export type LogFormat = 'text' | 'json';
 
 const LEVELS: Record<LogLevel, number> = {
   debug: 0,
@@ -8,6 +9,7 @@ const LEVELS: Record<LogLevel, number> = {
 };
 
 let currentLevel: LogLevel = 'warn';
+let currentFormat: LogFormat = 'text';
 
 export function setLogLevel(level: LogLevel): void {
   currentLevel = level;
@@ -17,7 +19,18 @@ export function getLogLevel(): LogLevel {
   return currentLevel;
 }
 
+export function setLogFormat(format: LogFormat): void {
+  currentFormat = format;
+}
+
+export function getLogFormat(): LogFormat {
+  return currentFormat;
+}
+
 function formatMessage(level: LogLevel, message: string): string {
+  if (currentFormat === 'json') {
+    return JSON.stringify({ timestamp: new Date().toISOString(), level, message });
+  }
   const tag = level.toUpperCase().padEnd(5);
   return `[${tag}] ${message}`;
 }
