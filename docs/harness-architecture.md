@@ -1,6 +1,8 @@
 # Frogger Harness 架構分析
 
 > 分析日期：2026-04-01 | 對標版本：Claude Code v2.1.88（source map 洩漏版）
+>
+> **追蹤更新（2026-04-28）**：本分析在 2026-04-01 完成，原文保持不動。期間部分標記為「缺少」的能力已補齊（特別是 Layer 5 Observability 與 P0 / P1 升級項目），詳見文末「[已補齊項目追蹤](#已補齊項目追蹤2026-04-28)」段落。
 
 使用者在開發 Frogger 時沒有刻意設計 harness 架構，但實際上已經有一套完整的控制層。
 本文件系統化分析現有的 harness，對標 Claude Code，找出已有的、缺少的、和可以改進的。
@@ -255,3 +257,50 @@ graph TD
 | System Prompt Builder | `packages/core/src/llm/system-prompt.ts` |
 | Logger | `packages/core/src/utils/logger.ts` |
 | Notifications | `packages/cli/src/utils/notify.ts` |
+| Audit Log（v0.12.0+） | `packages/core/src/audit/audit-logger.ts` |
+| ReadWriteLock（v0.12.0+） | `packages/core/src/tools/read-write-lock.ts` |
+
+---
+
+## 已補齊項目追蹤（2026-04-28）
+
+> 本段為 2026-04-01 原始分析後的補丁。原文中標記為 ❌ 或「缺少」的項目，若已在後續版本完成，於此處註記**完成版本與時間點**，原文保持不動以維持分析快照的歷史價值。
+
+### Layer 5 Observability — 企業場景缺口
+
+| 原文標記 | 實際狀態 | 完成版本 | 完成時間 | 實作摘要 |
+|---------|---------|---------|---------|---------|
+| ❌ Audit Log | ✅ 已補齊 | **v0.12.0** | 2026-04-01 | JSONL 寫入 `~/.frogger/audit/YYYY-MM-DD.jsonl`，記錄 tool/args/result/duration/mode/provider/model；fire-and-forget；`/audit` 系列 slash commands；config 預留 `audit.endpoint` 供未來 POST 到 SIEM |
+| ❌ Structured Logging | ✅ 已補齊 | **HEAD（commit ceb0529）** | 2026-04-01 | Logger 新增 `logFormat: 'text' \| 'json'` 設定，JSON 模式輸出 `{timestamp, level, message}` per line；透過 `~/.frogger/config.json` 或 `FROGGER_LOG_FORMAT` 環境變數設定；預設 `text` 零行為變更 |
+| ❌ Team Dashboard | ❌ 仍未實作 | — | — | 需要外部後端，待企業客戶需求驅動 |
+| ❌ Trace ID | ❌ 仍未實作 | — | — | 跨 tool call 關聯追蹤，下一波 observability 重點 |
+
+### 企業化升級建議 — 完成狀態
+
+| 原文優先級 | 項目 | 實際狀態 | 完成版本 | 完成時間 |
+|----------|------|---------|---------|---------|
+| **P0 #1** | Audit Log | ✅ 已實作 | v0.12.0 | 2026-04-01 |
+| **P0 #2** | Structured Logging | ✅ 已實作 | HEAD（ceb0529） | 2026-04-01 |
+| **P1 #3** | 並行 Tool 執行 | ✅ 已實作 | v0.12.0 | 2026-04-01（透過 ReadWriteLock — read 共享、write 互斥、writer-priority） |
+| P1 #4 | 多策略 Context Compaction | ❌ 仍未實作 | — | — |
+| P1 #5 | RAG Tool | ❌ 仍未實作（建議走 MCP server 替代自建） | — | — |
+| P2 #6 | Prompt Cache 優化（static/dynamic boundary） | ❌ 仍未實作 | — | — |
+| P2 #7 | File State Cache | ❌ 仍未實作 | — | — |
+| P2 #8 | ML Permission Classifier | ❌ 仍未實作（rule-based 對企業更可預測，刻意保留） | — | — |
+
+### 對 Harness 成熟度評分的影響
+
+> 原評分（2026-04-01）：Observability 3/5、Safety Gates 3/5、Resource Management 3/5
+
+依本次補齊狀況，**若以 2026-04-28 重評**：
+- **Observability**: 3/5 → **4/5**（Audit Log + Structured Logging 雙雙到位，僅缺 Trace ID 與 Team Dashboard）
+- **Safety Gates**: 3/5 → 持平（ML classifier 仍未做，但 rule-based 完整度持續提升）
+- **Resource Management**: 3/5 → 持平（並行 tool 執行屬 Safety/Concurrency 而非 compaction，多策略 compaction 仍未實作）
+
+**整體骨架估計：80% → 85%。** 企業 P0 已全部到位，剩餘缺口主要在 P1/P2 的差異化能力（多策略壓縮、RAG、ML classifier）。
+
+### 進行中（WIP，尚未發版）
+
+| 項目 | 對應原文段落 | 狀態 |
+|------|-------------|------|
+| **Subagent / 多 agent 並行** | （原文 Layer 2 提到 Coordinator/Swarm Gate 缺少；roadmap.md #21 規劃中） | 🚧 `spawn-agent` tool 開發中（uncommitted），主 agent 透過 tool 委派子任務 |

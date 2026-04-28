@@ -1,8 +1,15 @@
 # Frogger 功能開發路線圖
 
-> 版本：v0.2.0-dev | 更新日期：2026-03-11
+> 版本：v0.13.0-dev（已發布 v0.12.0） | 更新日期：2026-04-28
 >
 > 來源：`feature-gap-analysis.md`（v0.1.2 競品分析）+ Claude Code CLI 功能差距分析（2026-03）
+>
+> **版本進度速覽（截至 2026-04-28）**：
+> - ✅ Phase 1（v0.1.x UX 基礎）— 全部完成
+> - ✅ Phase 2（v0.1.x 核心能力）+ Phase 2B（穩定性架構）— 全部完成
+> - ✅ Phase 3（v0.2.0 進階功能）— **全部完成**（v0.2.0 → v0.5.x 期間）
+> - ✅ Phase 4（v0.3.0 生態系）— **大部分完成**（MCP SSE/HTTP、Background Tasks、Issue→PR 已上線；Subagent #21 進行中 — `spawn-agent` tool 開發中；VSCode Extension #25 仍未開工）
+> - 🚧 v0.12.0 已發布（mode switch + parallel tools + audit log），HEAD 包含 structured logging（待發版）
 
 ---
 
@@ -28,37 +35,37 @@
 
 ---
 
-## Phase 3：進階功能（v0.2.0）
+## Phase 3：進階功能（v0.2.0）— ✅ 全部完成
 
-> 中高難度，需要架構設計。按優先順序排列。
+> 中高難度，需要架構設計。按優先順序排列。**已於 v0.2.0 → v0.5.x 期間完成**。
 
 | # | 功能 | 難度 | 來源 | 說明 |
 |---|------|------|------|------|
-| 20 | **Prefix Caching** | 中 | 競品分析 (Claude Code) | Quick win — Anthropic prompt caching 降低成本與延遲，輸入 token 省 90%，零風險 |
-| 15 | **Extended Thinking** | 中 | Claude Code | Thinking budget 控制、Tab 切換顯示（依賴 Anthropic provider 支援）。搭配 Prefix Caching 效果倍增 |
-| 22 | **MCP 支援（stdio）** | 高 | 競品分析 (Cline, Goose) | **最大競品差距** — Model Context Protocol stdio transport，server 管理，tool 動態註冊。涵蓋 90%+ MCP servers，SSE/HTTP 留 Phase 4 |
-| 14 | **Hooks 系統** | 中高 | Claude Code | PreToolUse / PostToolUse shell hook，在 tool execute 前後觸發使用者定義的 shell 命令。客製化基礎 |
-| 35 | **Rules System** | 低 | P0 計畫 | 載入 `.frogger/rules/*.md` 注入 system prompt，讓使用者定義專案級行為規範 |
-| 36 | **Memory 系統** | 中 | Claude Code | `/memory` 命令 + `.frogger/memory.md`（專案）+ `~/.frogger/memory.md`（全域），跨 session 持久化上下文 |
-| 37 | **完整 Model Pricing** | 低 | Bug fix | `MODEL_PRICING` 補齊 Anthropic + OpenAI 定價，修復 `/cost` 對非 DeepSeek 用戶顯示 $0.00 的問題 |
-| 16 | **FROGGER.md 自動生成** | 中 | Claude Code | `/init` 掃描 package.json、目錄結構、README 自動產出專案上下文檔案 |
-| 19 | **Test Runner 整合** | 中 | 競品分析 (Claude Code) + SWE-bench | 自動偵測測試框架並執行、結構化解析結果。🔗 SWE-bench pytest 解析合併 |
-| 17 | **Web Search** | 中 | 競品分析 (Codex) | 搜尋功能，讓 agent 能查詢外部資訊 |
+| 20 | ~~**Prefix Caching**~~ ✅ | 中 | 競品分析 (Claude Code) | Anthropic prompt caching 自動啟用（v0.2.0），輸入 token 省 90% |
+| 15 | ~~**Extended Thinking**~~ ✅ | 中 | Claude Code | Thinking budget 控制 + ThinkingView UI 即時顯示（v0.2.0 + v0.3.0 UI） |
+| 22 | ~~**MCP 支援（stdio）**~~ ✅ | 高 | 競品分析 (Cline, Goose) | MCP stdio transport + tool 動態註冊（v0.2.0），SSE/HTTP 已於 v0.5.0 補齊 |
+| 14 | ~~**Hooks 系統**~~ ✅ | 中高 | Claude Code | PreToolUse / PostToolUse shell hook + 全域/專案級 + SHA-256 確認（v0.2.1） |
+| 35 | ~~**Rules System**~~ ✅ | 低 | P0 計畫 | `~/.frogger/rules/*.md` + 專案級規則注入 system prompt（v0.2.1） |
+| 36 | ~~**Memory 系統**~~ ✅ | 中 | Claude Code | `~/.frogger/memory/MEMORY.md` + save-memory tool + `/remember` 命令（v0.3.0） |
+| 37 | ~~**完整 Model Pricing**~~ ✅ | 低 | Bug fix | `MODEL_PRICING` 23 個模型完整定價（v0.5.1） |
+| 16 | ~~**FROGGER.md 自動生成**~~ ✅ | 中 | Claude Code | `/init-project` 掃描 package.json + 目錄結構自動產生（v0.3.0） |
+| 19 | ~~**Test Runner 整合**~~ ✅ | 中 | 競品分析 (Claude Code) + SWE-bench | vitest/jest/pytest/cargo/go 自動偵測 + 結構化解析（v0.2.0） |
+| 17 | ~~**Web Search**~~ ✅ | 中 | 競品分析 (Codex) | Tavily API 整合 + SearchProvider 抽象（v0.3.0） |
 
 ---
 
-## Phase 4：生態系（v0.3.0）
+## Phase 4：生態系（v0.3.0）— 大部分完成
 
 > 高難度，需要完整協議/架構設計
 
 | # | 功能 | 難度 | 來源 | 說明 |
 |---|------|------|------|------|
-| 21 | **Subagent / 多 agent 並行** | 高 | 競品分析 + Claude Code | 主 agent 拆任務 → spawn 子 agent，需 task queue、agent pool、結果合併 |
-| 22b | ~~**MCP SSE/HTTP transport**~~ ✅ | 高 | 競品分析 (Cline, Goose) | MCP 遠端 transport（SSE + Streamable HTTP），transport-factory + config discriminated union |
-| 23 | ~~**Background tasks**~~ ✅ | 高 | Claude Code | `/bg` 背景執行任務，BackgroundTaskManager + `/tasks` + `/task` commands，最多 5 併發 |
+| 21 | 🚧 **Subagent / 多 agent 並行** | 高 | 競品分析 + Claude Code | **進行中** — `spawn-agent` tool 開發中（WIP，尚未 commit），主 agent 透過 tool 委派子任務給子 agent 執行 |
+| 22b | ~~**MCP SSE/HTTP transport**~~ ✅ | 高 | 競品分析 (Cline, Goose) | MCP 遠端 transport（SSE + Streamable HTTP），transport-factory + config discriminated union（v0.5.0） |
+| 23 | ~~**Background tasks**~~ ✅ | 高 | Claude Code | `/bg` 背景執行任務，BackgroundTaskManager + `/tasks` + `/task` commands，最多 5 併發（v0.5.0） |
 | 24 | ~~**Sandbox 執行**~~ | 高 | 競品分析 (OpenHands) | ~~隔離環境執行危險操作~~ → 改用 Docker MCP server 替代，避免自建 |
 | 25 | **VSCode Extension** | 高 | 競品分析 (Cline) | HostProvider 抽象層已預留，需實作 VSCode 端。⚠️ 建議 MCP 穩固後再啟動 |
-| 26 | ~~**GitHub Issue → PR**~~ ✅ | 高 | 競品分析 (SWE-agent) | 自動從 Issue 分析需求、開分支、實作、發 PR — `/issue` 命令 + `gh-issue` / `gh-pr` 工具 |
+| 26 | ~~**GitHub Issue → PR**~~ ✅ | 高 | 競品分析 (SWE-agent) | 自動從 Issue 分析需求、開分支、實作、發 PR — `/issue` 命令 + `gh-issue` / `gh-pr` 工具（v0.4.0） |
 
 ### Phase 4 優化項目（Tech Debt）
 

@@ -1,6 +1,6 @@
 # Frogger 功能清單
 
-> 版本：v0.12.0 | 更新日期：2026-03-30
+> 版本：v0.12.0 | 更新日期：2026-04-01
 
 ---
 
@@ -255,6 +255,10 @@ Sessions 以 JSON 檔案持久化於 `~/.frogger/sessions/`。
 - **BenchmarkRunner** — 在隔離的 `/tmp/frogger-bench-*` 目錄中執行測試任務，內建 timeout 機制（預設 5 分鐘）防止 agent 無限迴圈
 - **5 個測試任務** — hello（簡單）、fizzbuzz（簡單）、snake（中等）、debug（中等）、refactor（困難）
 - **結果回報** — 包含 pass/fail、訊息、耗時、token 用量
+
+### Observability
+
+- **Structured Logging（JSON output mode）** — Logger 支援 `text`（預設，零行為變更）與 `json` 兩種輸出格式；JSON 模式每行輸出 `{"timestamp","level","message"}`，可直接餵給 ELK / Datadog / Splunk 等日誌平台；透過 `~/.frogger/config.json` 的 `logFormat` 欄位或 `FROGGER_LOG_FORMAT` 環境變數設定，環境變數優先
 
 ---
 

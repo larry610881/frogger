@@ -1,6 +1,8 @@
 # Architecture Journal
 
 ## Table of Contents
+- [2026-04-01: Structured Logging (JSON Output Mode)](#2026-04-01-structured-logging-json-output-mode)
+- [2026-04-01: v0.12.0 Enterprise-Ready Phase 1 — Audit Log + Parallel Tool Execution (ReadWriteLock)](#2026-04-01-v0120-enterprise-ready-phase-1--audit-log--parallel-tool-execution-readwritelock)
 - [2026-03-30: LLM-Driven Automatic Mode Switching (switch-mode tool)](#2026-03-30-llm-driven-automatic-mode-switching-switch-mode-tool)
 - [2026-03-15: v0.11.0 SWE-bench Competitiveness + System Stability Sprint](#2026-03-15-v0110-swe-bench-competitiveness--system-stability-sprint)
 - [2026-03-13: Permission System Enhancement — System Prompt Safety + Always-Deny + Policy Override](#2026-03-13-permission-system-enhancement--system-prompt-safety--always-deny--policy-override)
@@ -26,6 +28,59 @@
 - [2026-03-09: P1 Feature Batch — Permission, Git, Diff, Session, Markdown](#2026-03-09-p1-feature-batch--permission-git-diff-session-markdown)
 - [2026-03-08: Dynamic Provider Registry + Agent Benchmark](#2026-03-08-dynamic-provider-registry--agent-benchmark)
 <!-- New entries are inserted below -->
+
+---
+
+### 2026-04-01: Structured Logging (JSON Output Mode)
+
+**來源**：feat(core): structured logging (JSON output mode) + test fixes（commit ceb0529）
+**主題**：Production Observability、Log Aggregation Pipeline、Backward-Compatible Defaults
+
+#### 做得好的地方
+- **零行為變更的預設值** — `logFormat` 預設 `text`，既有使用者升級後輸出完全不變；JSON 模式僅在使用者主動設定時啟用，符合 Hyrum's Law 的精神（不破壞既有觀察行為）。
+- **雙來源設定（config + env）** — `~/.frogger/config.json` 適合長期固定設定，`FROGGER_LOG_FORMAT` 環境變數適合 CI/CD 或 container 動態覆蓋；環境變數優先順序與一般 12-factor app 慣例一致。
+- **Schema 對齊主流日誌平台** — `{timestamp, level, message}` 三欄位是 ELK / Datadog / Splunk 的最小公約數，未來要加 `service`、`traceId` 也能 backward-compatible 擴充。
+- **同步修掉 audit-logger flaky timing** — 順手把 fixed timeout 改成 polling，提高 CI 穩定度，是好的「邊清邊改」實踐。
+
+#### 潛在隱憂
+- **JSON 模式下的多行輸出** — 若 `message` 包含換行（如 stack trace），目前會破壞 「one JSON per line」 的 NDJSON 假設，下游 parser 會失敗。→ 應在 JSON 序列化時 escape 換行（`JSON.stringify` 預設會做，但需驗證所有寫入路徑都走 `JSON.stringify` 而非字串拼接）。優先級：中
+- **無 log level 過濾整合** — Structured logging 與 log level 是兩個獨立軸；JSON 模式下應確保 `LOG_LEVEL=warn` 仍生效。優先級：低
+- **無 log rotation** — 目前所有輸出走 stderr，由終端 / process manager 處理；若使用者把 stderr 重導到檔案，會無限增長。→ 文件層面建議搭配 `logrotate` 或 systemd journal。優先級：低
+
+#### 延伸學習
+- **NDJSON (Newline-Delimited JSON)**：每行一個獨立 JSON object 的格式，是日誌串流的事實標準。比起 JSON array，stream-friendly 且容易 grep / jq。
+- **12-Factor App § XI Logs**：「treat logs as event streams」— app 不該管寫檔或 rotation，只負責輸出 stdout/stderr，由 execution environment 處理聚合。Frogger 的設計符合此原則。
+- 若想深入：搜尋「structured logging best practices」、「pino vs winston vs bunyan」（Node.js 生態的三大結構化 logger）
+
+---
+
+### 2026-04-01: v0.12.0 Enterprise-Ready Phase 1 — Audit Log + Parallel Tool Execution (ReadWriteLock)
+
+**來源**：feat(monorepo): v0.12.0 enterprise-ready Phase 1（commit e4b44f4）
+**主題**：Concurrency Control、Enterprise Audit Trail、Fire-and-Forget Logging、Reader-Writer Lock Pattern
+
+> 本次 v0.12.0 commit 包含三大主題：switch-mode（已於 2026-03-30 entry 記錄）、ReadWriteLock 並行控制、Audit Log 系統。本筆記專注於後兩者。
+
+#### 做得好的地方
+- **ReadWriteLock 修復 Vercel AI SDK race condition** — Vercel AI SDK 的 `Promise.all()` 平行呼叫所有 tool，遇到「同一輪兩個 write tool 改同一檔」會發生競態。改用讀寫鎖：read tools (`permissionLevel: auto`) 共享鎖（最多 10 並行），write tools (`permissionLevel: confirm`) 互斥鎖；既保留並行讀的效能，又避免寫入競態，是教科書級的 RW-lock 應用。
+- **Writer-priority 防止飢餓** — 當有 writer 等待時，新進的 readers 會排隊等待，避免持續高頻讀取讓 writer 永遠拿不到鎖（reader-preference 的反面教材）。
+- **AbortSignal 整合** — 鎖等待支援 abort，使用者 Ctrl+C 不會卡在等鎖；與既有的串流中斷機制一致。
+- **Audit Log fire-and-forget** — 寫入非同步且失敗不阻斷 tool 執行，企業審計需求（合規 / 事後追溯）與 agent 流暢度兼顧。
+- **JSONL + 日期輪轉** — `~/.frogger/audit/YYYY-MM-DD.jsonl` 天然支援 stream parser（jq、Logstash、Vector），日期輪轉避免單檔過大。
+- **Slash commands UX 完整** — `/audit`（今日摘要）、`/audit tail N`（最近 N 筆）、`/audit files`（檔案清單）三層查詢，無需離開 TUI 就能審計。
+- **遠端 endpoint 擴充點預留** — Config 已有 `audit.endpoint` 欄位，未來 POST 到 SIEM / Datadog 不需改架構。
+
+#### 潛在隱憂
+- **Reader 上限 10 是否合理** — 大型 monorepo 可能同時觸發數十個 grep + read-file，10 條 reader 會排隊。→ 應 benchmark 觀察實際 contention，必要時改為 config 可調。優先級：中
+- **Audit log 磁碟無限增長** — 目前無 retention 機制，每天一個檔案永久保留。→ 應加入 `audit.retentionDays`（如 90 天）+ 自動清理舊檔。優先級：中
+- **Audit log 包含 tool args** — 若 args 含敏感資訊（如 LLM 寫入的 API key、PII），會被原始記錄。→ 應有可選的 args redaction 規則（regex pattern），或對 `bash` tool 額外 mask。優先級：高（合規敏感）
+- **switch-mode 與 ReadWriteLock 的互動** — 模式切換時若有 in-flight tool 持有鎖，鎖能正確釋放嗎？應有測試覆蓋 abort + lock cleanup 的組合場景。優先級：中
+
+#### 延伸學習
+- **Reader-Writer Lock Pattern**：經典並行控制原語（Tony Hoare 1974 提出）。三大變體：reader-preference（讀者優先，可能 writer starvation）、writer-preference（寫者優先，可能 reader starvation）、fair-queue（FIFO，無優先）。Frogger 採 writer-preference 是 agent tool 的合理選擇（write 操作應快速完成）。
+- **Audit Trail vs Logging**：兩者目的不同 — logging 為了 debugging（可遺失、可重複、可截斷），audit trail 為了合規（必須完整、不可竄改、可重建）。Audit log 理想上應是 append-only + immutable + signed。Frogger 目前是 append-only 但無防竄改機制，企業客戶可能要求 cryptographic chain（如 hash linking）。
+- **Fire-and-Forget Logging Pitfall**：非同步寫入失敗時靜默丟棄，會掩蓋真實問題（磁碟滿、權限錯誤）。應有最低限度的 error counter + 偶爾告警。
+- 若想深入：搜尋「reader writer lock starvation」、「append-only audit log immutability」、「12-factor logs」
 
 ---
 
